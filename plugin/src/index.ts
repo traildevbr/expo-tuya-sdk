@@ -5,6 +5,7 @@ import {
     withAndroidManifest,
     withPodfile,
     withProjectBuildGradle,
+    withAppBuildGradle,
 } from 'expo/config-plugins';
 
 type PlatformKeys = {
@@ -13,13 +14,34 @@ type PlatformKeys = {
 };
 
 type TuyaSdkPluginProps = {
-    ios?: PlatformKeys;
-    android?: PlatformKeys;
+    ios?: PlatformKeys & {
+        /**
+         * Path to the directory containing ThingSmartCryption.podspec and the Build folder.
+         * Obtained by extracting ios_core_sdk.tar.gz from the Tuya Developer Platform.
+         * Relative to the iOS project directory (e.g. "../vendor/ios").
+         */
+        cryptionPath: string;
+    };
+    android?: PlatformKeys & {
+        /**
+         * Path to the directory containing the security-algorithm .aar file.
+         * Relative to the Android app directory (e.g. "../../vendor/android").
+         */
+        securityAarPath?: string;
+    };
 };
 
-const TUYA_POD_SOURCE = "source 'https://github.com/tuya/tuya-pod-specs.git'";
-const GITHUB_POD_SOURCE = "source 'https://cdn.cocoapods.org/'";
-const TUYA_MAVEN_URL = 'https://maven-other.tuya.com/repository/maven-releases/';
+const POD_SOURCES = [
+    "source 'https://github.com/tuya/tuya-pod-specs.git'",
+    "source 'https://github.com/TuyaInc/TuyaPublicSpecs.git'",
+    "source 'https://github.com/CocoaPods/Specs.git'",
+];
+
+const TUYA_MAVEN_URLS = [
+    'https://maven-other.tuya.com/repository/maven-releases/',
+    'https://maven-other.tuya.com/repository/maven-commercial-releases/',
+    'https://maven-other.tuya.com/repository/maven-snapshots/',
+];
 
 // --- iOS: Inject keys + permissions into Info.plist ---
 const withTuyaInfoPlist: ConfigPlugin<TuyaSdkPluginProps> = (config, props) => {
@@ -48,19 +70,24 @@ const withTuyaInfoPlist: ConfigPlugin<TuyaSdkPluginProps> = (config, props) => {
     });
 };
 
-// --- iOS: Add Tuya pod sources to Podfile ---
-const withTuyaPodfile: ConfigPlugin = (config) => {
+// --- iOS: Add Tuya pod sources + ThingSmartCryption to Podfile ---
+const withTuyaPodfile: ConfigPlugin<TuyaSdkPluginProps> = (config, props) => {
     return withPodfile(config, (podfileConfig) => {
         let podfile = podfileConfig.modResults.contents;
 
-        if (!podfile.includes(TUYA_POD_SOURCE)) {
-            const sources = [TUYA_POD_SOURCE, GITHUB_POD_SOURCE].filter(
-                (s) => !podfile.includes(s)
-            );
+        // Add all required pod sources at the top
+        const missingSources = POD_SOURCES.filter((s) => !podfile.includes(s));
+        if (missingSources.length > 0) {
+            podfile = missingSources.join('\n') + '\n\n' + podfile;
+        }
 
-            if (sources.length > 0) {
-                podfile = sources.join('\n') + '\n\n' + podfile;
-            }
+        // Add ThingSmartCryption pod with local path
+        if (props.ios?.cryptionPath && !podfile.includes('ThingSmartCryption')) {
+            const cryptionPod = `  pod 'ThingSmartCryption', :path => '${props.ios.cryptionPath}'`;
+            podfile = podfile.replace(
+                /use_expo_modules!\s*\n/,
+                `use_expo_modules!\n${cryptionPod}\n`
+            );
         }
 
         podfileConfig.modResults.contents = podfile;
@@ -113,16 +140,54 @@ const withTuyaAndroidManifest: ConfigPlugin<TuyaSdkPluginProps> = (config, props
     });
 };
 
-// --- Android: Add Tuya Maven repository to project-level build.gradle ---
+// --- Android: Add Tuya Maven repositories to project-level build.gradle ---
 const withTuyaMavenRepo: ConfigPlugin = (config) => {
     return withProjectBuildGradle(config, (gradleConfig) => {
         let buildGradle = gradleConfig.modResults.contents;
 
-        if (!buildGradle.includes(TUYA_MAVEN_URL)) {
-            // Insert the Tuya maven repo inside the allprojects > repositories block
+        const missingUrls = TUYA_MAVEN_URLS.filter((url) => !buildGradle.includes(url));
+        if (missingUrls.length > 0) {
+            const mavenLines = missingUrls
+                .map((url) => `    maven { url '${url}' }`)
+                .join('\n');
             buildGradle = buildGradle.replace(
                 /allprojects\s*\{[\s\S]*?repositories\s*\{/,
-                (match) => `${match}\n    maven { url '${TUYA_MAVEN_URL}' }`
+                (match) => `${match}\n${mavenLines}`
+            );
+        }
+
+        gradleConfig.modResults.contents = buildGradle;
+        return gradleConfig;
+    });
+};
+
+// --- Android: Add security-algorithm AAR via flatDir + implementation ---
+const withTuyaSecurityAar: ConfigPlugin<TuyaSdkPluginProps> = (config, props) => {
+    if (!props.android?.securityAarPath) {
+        return config;
+    }
+
+    const aarPath = props.android.securityAarPath;
+
+    return withAppBuildGradle(config, (gradleConfig) => {
+        let buildGradle = gradleConfig.modResults.contents;
+
+        // Add flatDir repository for the AAR
+        if (!buildGradle.includes('security-algorithm')) {
+            // Add repositories block with flatDir before dependencies
+            const flatDirBlock = `\nrepositories {\n    flatDir {\n        dirs '${aarPath}'\n    }\n}\n`;
+            const aarDependency = `    implementation(name: 'security-algorithm-1.0.0-beta', ext: 'aar')`;
+
+            // Insert flatDir before the dependencies block
+            buildGradle = buildGradle.replace(
+                /\ndependencies\s*\{/,
+                `${flatDirBlock}\ndependencies {`
+            );
+
+            // Insert the AAR dependency inside the dependencies block
+            buildGradle = buildGradle.replace(
+                /\ndependencies\s*\{/,
+                `\ndependencies {\n${aarDependency}`
             );
         }
 
@@ -145,13 +210,20 @@ const withExpoTuyaSdk: ConfigPlugin<TuyaSdkPluginProps> = (config, props) => {
     }
 
     if (props.ios) {
+        if (!props.ios.cryptionPath) {
+            throw new Error(
+                'expo-tuya-sdk: "ios.cryptionPath" is required. ' +
+                'Extract ios_core_sdk.tar.gz from the Tuya Developer Platform and provide the path.'
+            );
+        }
         config = withTuyaInfoPlist(config, props);
-        config = withTuyaPodfile(config);
+        config = withTuyaPodfile(config, props);
     }
 
     if (props.android) {
         config = withTuyaAndroidManifest(config, props);
         config = withTuyaMavenRepo(config);
+        config = withTuyaSecurityAar(config, props);
     }
 
     return config;

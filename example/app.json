@@ -14,7 +14,8 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "br.com.traildev.sample"
+      "bundleIdentifier": "br.com.traildev.sample",
+      "appleTeamId": "DK7KBP578D"
     },
     "android": {
       "adaptiveIcon": {

@@ -3,6 +3,7 @@ import {
     withAndroidManifest,
     withPodfile,
     withProjectBuildGradle,
+    withAppBuildGradle,
 } from 'expo/config-plugins';
 
 // Import the compiled plugin (same path as app.plugin.js)
@@ -22,11 +23,19 @@ function createBaseConfig() {
 }
 
 const IOS_PROPS = {
-    ios: { appKey: 'ios-key-123', appSecret: 'ios-secret-456' },
+    ios: {
+        appKey: 'ios-key-123',
+        appSecret: 'ios-secret-456',
+        cryptionPath: '../vendor/ios',
+    },
 };
 
 const ANDROID_PROPS = {
-    android: { appKey: 'android-key-789', appSecret: 'android-secret-012' },
+    android: {
+        appKey: 'android-key-789',
+        appSecret: 'android-secret-012',
+        securityAarPath: '../../vendor/android',
+    },
 };
 
 const FULL_PROPS = { ...IOS_PROPS, ...ANDROID_PROPS };
@@ -37,6 +46,7 @@ let infoPlistCallback: any = null;
 let podfileCallback: any = null;
 let androidManifestCallback: any = null;
 let projectBuildGradleCallback: any = null;
+let appBuildGradleCallback: any = null;
 
 jest.mock('expo/config-plugins', () => {
     const actual = jest.requireActual('expo/config-plugins');
@@ -58,6 +68,10 @@ jest.mock('expo/config-plugins', () => {
             projectBuildGradleCallback = callback;
             return config;
         }),
+        withAppBuildGradle: jest.fn((config: any, callback: any) => {
+            appBuildGradleCallback = callback;
+            return config;
+        }),
         createRunOncePlugin: jest.fn((plugin: any) => plugin),
     };
 });
@@ -67,6 +81,7 @@ beforeEach(() => {
     podfileCallback = null;
     androidManifestCallback = null;
     projectBuildGradleCallback = null;
+    appBuildGradleCallback = null;
     jest.clearAllMocks();
 });
 
@@ -85,7 +100,15 @@ describe('Plugin validation', () => {
         );
     });
 
-    it('does not throw with only ios props', () => {
+    it('throws when ios is provided without cryptionPath', () => {
+        expect(() =>
+            withExpoTuyaSdk(createBaseConfig(), {
+                ios: { appKey: 'k', appSecret: 's' },
+            })
+        ).toThrow('cryptionPath');
+    });
+
+    it('does not throw with valid ios props', () => {
         expect(() => withExpoTuyaSdk(createBaseConfig(), IOS_PROPS)).not.toThrow();
     });
 
@@ -157,25 +180,46 @@ describe('iOS Info.plist', () => {
 // ─── iOS: Podfile ───────────────────────────────────────────────────────────
 
 describe('iOS Podfile', () => {
-    it('adds Tuya and CDN pod sources', () => {
+    it('adds all three required pod sources', () => {
         withExpoTuyaSdk(createBaseConfig(), IOS_PROPS);
 
         const podfileConfig = {
-            modResults: { contents: "platform :ios, '13.0'\n" },
+            modResults: { contents: "use_expo_modules!\nplatform :ios, '13.0'\n" },
         };
         podfileCallback(podfileConfig);
 
         expect(podfileConfig.modResults.contents).toContain(
             "source 'https://github.com/tuya/tuya-pod-specs.git'"
         );
-        expect(podfileConfig.modResults.contents).toContain("source 'https://cdn.cocoapods.org/'");
+        expect(podfileConfig.modResults.contents).toContain(
+            "source 'https://github.com/TuyaInc/TuyaPublicSpecs.git'"
+        );
+        expect(podfileConfig.modResults.contents).toContain(
+            "source 'https://github.com/CocoaPods/Specs.git'"
+        );
+    });
+
+    it('injects ThingSmartCryption pod with the configured path', () => {
+        withExpoTuyaSdk(createBaseConfig(), IOS_PROPS);
+
+        const podfileConfig = {
+            modResults: { contents: "use_expo_modules!\nplatform :ios, '13.0'\n" },
+        };
+        podfileCallback(podfileConfig);
+
+        expect(podfileConfig.modResults.contents).toContain(
+            "pod 'ThingSmartCryption', :path => '../vendor/ios'"
+        );
     });
 
     it('does not duplicate sources if already present', () => {
         withExpoTuyaSdk(createBaseConfig(), IOS_PROPS);
 
         const existingPodfile =
-            "source 'https://github.com/tuya/tuya-pod-specs.git'\nsource 'https://cdn.cocoapods.org/'\nplatform :ios, '13.0'\n";
+            "source 'https://github.com/tuya/tuya-pod-specs.git'\n" +
+            "source 'https://github.com/TuyaInc/TuyaPublicSpecs.git'\n" +
+            "source 'https://github.com/CocoaPods/Specs.git'\n" +
+            "use_expo_modules!\nplatform :ios, '13.0'\n";
         const podfileConfig = {
             modResults: { contents: existingPodfile },
         };
@@ -183,6 +227,21 @@ describe('iOS Podfile', () => {
 
         const tuyaCount = (podfileConfig.modResults.contents.match(/tuya-pod-specs/g) || []).length;
         expect(tuyaCount).toBe(1);
+    });
+
+    it('does not duplicate ThingSmartCryption if already present', () => {
+        withExpoTuyaSdk(createBaseConfig(), IOS_PROPS);
+
+        const podfileConfig = {
+            modResults: {
+                contents:
+                    "use_expo_modules!\n  pod 'ThingSmartCryption', :path => '../vendor/ios'\nplatform :ios, '13.0'\n",
+            },
+        };
+        podfileCallback(podfileConfig);
+
+        const count = (podfileConfig.modResults.contents.match(/ThingSmartCryption/g) || []).length;
+        expect(count).toBe(1);
     });
 });
 
@@ -261,7 +320,7 @@ allprojects {
 }
 `;
 
-    it('adds Tuya Maven repository', () => {
+    it('adds Tuya Maven repositories', () => {
         withExpoTuyaSdk(createBaseConfig(), ANDROID_PROPS);
 
         const gradleConfig = {
@@ -272,21 +331,92 @@ allprojects {
         expect(gradleConfig.modResults.contents).toContain(
             "maven { url 'https://maven-other.tuya.com/repository/maven-releases/' }"
         );
+        expect(gradleConfig.modResults.contents).toContain(
+            "maven { url 'https://maven-other.tuya.com/repository/maven-commercial-releases/' }"
+        );
+        expect(gradleConfig.modResults.contents).toContain(
+            "maven { url 'https://maven-other.tuya.com/repository/maven-snapshots/' }"
+        );
     });
 
-    it('does not duplicate Maven repository if already present', () => {
+    it('does not duplicate Maven repositories if already present', () => {
         withExpoTuyaSdk(createBaseConfig(), ANDROID_PROPS);
 
         const gradleWithTuya =
             SAMPLE_BUILD_GRADLE +
-            "\nmaven { url 'https://maven-other.tuya.com/repository/maven-releases/' }";
+            "\nmaven { url 'https://maven-other.tuya.com/repository/maven-releases/' }" +
+            "\nmaven { url 'https://maven-other.tuya.com/repository/maven-commercial-releases/' }" +
+            "\nmaven { url 'https://maven-other.tuya.com/repository/maven-snapshots/' }";
         const gradleConfig = {
             modResults: { contents: gradleWithTuya },
         };
         projectBuildGradleCallback(gradleConfig);
 
         const count = (gradleConfig.modResults.contents.match(/maven-other\.tuya\.com/g) || []).length;
+        expect(count).toBe(3);
+    });
+});
+
+// ─── Android: Security AAR ───────────────────────────────────────────────────
+
+describe('Android security-algorithm AAR', () => {
+    const SAMPLE_APP_GRADLE = `
+android {
+  namespace "com.test"
+}
+
+dependencies {
+    implementation("com.facebook.react:react-android")
+}
+`;
+
+    it('adds flatDir repository pointing to securityAarPath', () => {
+        withExpoTuyaSdk(createBaseConfig(), ANDROID_PROPS);
+
+        const gradleConfig = {
+            modResults: { contents: SAMPLE_APP_GRADLE },
+        };
+        appBuildGradleCallback(gradleConfig);
+
+        expect(gradleConfig.modResults.contents).toContain("flatDir");
+        expect(gradleConfig.modResults.contents).toContain("dirs '../../vendor/android'");
+    });
+
+    it('adds security-algorithm AAR as implementation dependency', () => {
+        withExpoTuyaSdk(createBaseConfig(), ANDROID_PROPS);
+
+        const gradleConfig = {
+            modResults: { contents: SAMPLE_APP_GRADLE },
+        };
+        appBuildGradleCallback(gradleConfig);
+
+        expect(gradleConfig.modResults.contents).toContain(
+            "implementation(name: 'security-algorithm-1.0.0-beta', ext: 'aar')"
+        );
+    });
+
+    it('does not duplicate if already present', () => {
+        withExpoTuyaSdk(createBaseConfig(), ANDROID_PROPS);
+
+        const gradleConfig = {
+            modResults: {
+                contents:
+                    SAMPLE_APP_GRADLE + "\nimplementation(name: 'security-algorithm-1.0.0-beta', ext: 'aar')",
+            },
+        };
+        appBuildGradleCallback(gradleConfig);
+
+        const count = (gradleConfig.modResults.contents.match(/security-algorithm/g) || []).length;
         expect(count).toBe(1);
+    });
+
+    it('does not inject AAR when securityAarPath is not provided', () => {
+        const propsWithoutAar = {
+            android: { appKey: 'k', appSecret: 's' },
+        };
+        withExpoTuyaSdk(createBaseConfig(), propsWithoutAar);
+
+        expect(withAppBuildGradle).not.toHaveBeenCalled();
     });
 });
 
