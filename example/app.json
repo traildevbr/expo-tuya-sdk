@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "expo-tuya-sdk-example",
+    "name": "Sample App",
     "slug": "expo-tuya-sdk-example",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "expo.modules.tuyasdk.example"
+      "bundleIdentifier": "br.com.traildev.sample"
     },
     "android": {
       "adaptiveIcon": {
@@ -23,7 +23,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "expo.modules.tuyasdk.example"
+      "package": "br.com.traildev.sample"
     }
   }
 }

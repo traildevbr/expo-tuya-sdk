@@ -12,3 +12,7 @@ __tests__
 /android/src/test/
 /android/build/
 /example/
+
+# Plugin source (only ship compiled plugin)
+/plugin/src/
+/plugin/tsconfig.json

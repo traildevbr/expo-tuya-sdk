@@ -1,60 +1,55 @@
-import { useEvent } from 'expo';
-import ExpoTuyaSdk, { ExpoTuyaSdkView } from 'expo-tuya-sdk';
-import { Button, SafeAreaView, ScrollView, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import ExpoTuyaSdk from 'expo-tuya-sdk';
+import { SafeAreaView, ScrollView, Text, View, StyleSheet } from 'react-native';
 
 export default function App() {
-  const onChangePayload = useEvent(ExpoTuyaSdk, 'onChange');
+  const [initialized, setInitialized] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function initTuya() {
+      try {
+        await ExpoTuyaSdk.initialize();
+        setInitialized(true);
+      } catch (e: any) {
+        setError(e.message ?? 'Failed to initialize Tuya SDK');
+      }
+    }
+
+    initTuya();
+  }, []);
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.container}>
-        <Text style={styles.header}>Module API Example</Text>
-        <Group name="Constants">
-          <Text>{ExpoTuyaSdk.PI}</Text>
-        </Group>
-        <Group name="Functions">
-          <Text>{ExpoTuyaSdk.hello()}</Text>
-        </Group>
-        <Group name="Async functions">
-          <Button
-            title="Set value"
-            onPress={async () => {
-              await ExpoTuyaSdk.setValueAsync('Hello from JS!');
-            }}
-          />
-        </Group>
-        <Group name="Events">
-          <Text>{onChangePayload?.value}</Text>
-        </Group>
-        <Group name="Views">
-          <ExpoTuyaSdkView
-            url="https://www.example.com"
-            onLoad={({ nativeEvent: { url } }) => console.log(`Loaded: ${url}`)}
-            style={styles.view}
-          />
-        </Group>
+        <Text style={styles.header}>Expo Tuya SDK</Text>
+        <View style={styles.group}>
+          <Text style={styles.groupHeader}>SDK Status</Text>
+          {error ? (
+            <Text style={styles.error}>Error: {error}</Text>
+          ) : initialized ? (
+            <Text style={styles.success}>Tuya SDK initialized</Text>
+          ) : (
+            <Text>Initializing...</Text>
+          )}
+        </View>
+        <View style={styles.group}>
+          <Text style={styles.groupHeader}>isInitialized</Text>
+          <Text>{String(ExpoTuyaSdk.isInitialized())}</Text>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function Group(props: { name: string; children: React.ReactNode }) {
-  return (
-    <View style={styles.group}>
-      <Text style={styles.groupHeader}>{props.name}</Text>
-      {props.children}
-    </View>
-  );
-}
-
-const styles = {
+const styles = StyleSheet.create({
   header: {
     fontSize: 30,
     margin: 20,
   },
   groupHeader: {
     fontSize: 20,
-    marginBottom: 20,
+    marginBottom: 10,
   },
   group: {
     margin: 20,
@@ -66,8 +61,10 @@ const styles = {
     flex: 1,
     backgroundColor: '#eee',
   },
-  view: {
-    flex: 1,
-    height: 200,
+  success: {
+    color: 'green',
   },
-};
+  error: {
+    color: 'red',
+  },
+});
