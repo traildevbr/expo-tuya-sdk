@@ -5,12 +5,14 @@
   ],
   "apple": {
     "modules": [
-      "ExpoTuyaSdkModule"
+      "ExpoTuyaSdkModule",
+      "UserAccountModule"
     ]
   },
   "android": {
     "modules": [
-      "expo.modules.tuyasdk.ExpoTuyaSdkModule"
+      "expo.modules.tuyasdk.ExpoTuyaSdkModule",
+      "expo.modules.tuyasdk.UserAccountModule"
     ]
   }
 }
