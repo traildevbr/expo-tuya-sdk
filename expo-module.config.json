@@ -1,0 +1,16 @@
+{
+  "platforms": [
+    "apple",
+    "android"
+  ],
+  "apple": {
+    "modules": [
+      "ExpoTuyaSdkModule"
+    ]
+  },
+  "android": {
+    "modules": [
+      "expo.modules.tuyasdk.ExpoTuyaSdkModule"
+    ]
+  }
+}
