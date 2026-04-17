@@ -19,6 +19,8 @@ Pod::Spec.new do |s|
   s.dependency 'ThingSmartHomeKit'
   s.dependency 'ThingSmartDeviceCoreKit'
   s.dependency 'ThingSmartActivatorKit'
+  s.dependency 'ThingSmartBusinessExtensionKit'
+  s.dependency 'ThingSmartActivatorCoreKit'
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',

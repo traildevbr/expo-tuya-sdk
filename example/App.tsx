@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
-import ExpoTuyaSdk, { UserAccount, HomeManagement } from 'expo-tuya-sdk';
-import type { HomeBean } from 'expo-tuya-sdk';
+import ExpoTuyaSdk, { UserAccount, HomeManagement, DevicePairing } from 'expo-tuya-sdk';
+import type { HomeBean, DeviceBean } from 'expo-tuya-sdk';
 import {
   SafeAreaView,
   ScrollView,
@@ -17,7 +17,6 @@ import {
 
 type Screen = 'init' | 'auth' | 'home';
 type AuthTab = 'login' | 'register';
-
 export default function App() {
   const [screen, setScreen] = useState<Screen>('init');
   const [initError, setInitError] = useState<string | null>(null);
@@ -190,6 +189,7 @@ function HomeScreen({ onLogout }: { onLogout: () => void }) {
   const [showCreate, setShowCreate] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [showAcceptInvite, setShowAcceptInvite] = useState(false);
+  const [showPairing, setShowPairing] = useState(false);
   const [selectedHome, setSelectedHome] = useState<HomeBean | null>(null);
 
   const loadHomes = useCallback(async () => {
@@ -288,6 +288,9 @@ function HomeScreen({ onLogout }: { onLogout: () => void }) {
         <TouchableOpacity style={[styles.fab, styles.fabSecondary]} onPress={() => setShowAcceptInvite(true)}>
           <Text style={styles.fabText}>📨 Accept Invite</Text>
         </TouchableOpacity>
+        <TouchableOpacity style={[styles.fab, styles.fabGreen]} onPress={() => setShowPairing(true)}>
+          <Text style={styles.fabText}>＋ Add Device</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.fab} onPress={() => setShowCreate(true)}>
           <Text style={styles.fabText}>+ New Home</Text>
         </TouchableOpacity>
@@ -296,6 +299,7 @@ function HomeScreen({ onLogout }: { onLogout: () => void }) {
       <CreateHomeModal visible={showCreate} onClose={() => setShowCreate(false)} onCreated={loadHomes} />
       <InviteMemberModal visible={showInvite} home={selectedHome} onClose={() => setShowInvite(false)} />
       <AcceptInviteModal visible={showAcceptInvite} onClose={() => setShowAcceptInvite(false)} onAccepted={loadHomes} />
+      <DevicePairingModal visible={showPairing} homes={homes} onClose={() => setShowPairing(false)} />
     </SafeAreaView>
   );
 }
@@ -566,6 +570,198 @@ function AcceptInviteModal({
   );
 }
 
+// ─── Device Pairing Modal ───────────────────────────────────────────────────
+
+function DevicePairingModal({
+  visible,
+  homes,
+  onClose,
+}: {
+  visible: boolean;
+  homes: HomeBean[];
+  onClose: () => void;
+}) {
+  const [selectedHomeId, setSelectedHomeId] = useState<number | null>(null);
+  const [ssid, setSsid] = useState('');
+  const [password, setPassword] = useState('');
+  const [status, setStatus] = useState<'idle' | 'pairing' | 'success' | 'error'>('idle');
+  const [statusMsg, setStatusMsg] = useState('');
+  const [pairedDevice, setPairedDevice] = useState<DeviceBean | null>(null);
+
+  const reset = () => {
+    setStatus('idle');
+    setStatusMsg('');
+    setPairedDevice(null);
+  };
+
+  const handleClose = () => {
+    if (status === 'pairing') {
+      DevicePairing.stopEzPairing().catch(() => { });
+    }
+    reset();
+    onClose();
+  };
+
+  const handleStartPairing = async () => {
+    if (!selectedHomeId) return Alert.alert('Error', 'Select a home first');
+    if (!ssid.trim()) return Alert.alert('Error', 'Enter the Wi-Fi name (SSID)');
+
+    setStatus('pairing');
+    setStatusMsg('Getting pairing token...');
+
+    // Subscribe to events
+    const foundSub = DevicePairing.addListener('onDeviceFound', ({ devId }) => {
+      setStatusMsg(`Device found: ${devId}`);
+    });
+    const bindSub = DevicePairing.addListener('onDeviceBind', ({ devId }) => {
+      setStatusMsg(`Binding device: ${devId}...`);
+    });
+    const successSub = DevicePairing.addListener('onPairingSuccess', (device) => {
+      setPairedDevice(device as DeviceBean);
+      setStatus('success');
+      setStatusMsg('Device paired successfully!');
+      foundSub.remove();
+      bindSub.remove();
+      successSub.remove();
+      errorSub.remove();
+    });
+    const errorSub = DevicePairing.addListener('onPairingError', ({ errorMsg }) => {
+      setStatus('error');
+      setStatusMsg(errorMsg || 'Pairing failed');
+      foundSub.remove();
+      bindSub.remove();
+      successSub.remove();
+      errorSub.remove();
+    });
+
+    try {
+      const token = await DevicePairing.getPairingToken(selectedHomeId);
+      setStatusMsg('Starting EZ pairing...');
+      await DevicePairing.startEzPairing(ssid.trim(), password, token, 100);
+    } catch (e: any) {
+      if (status !== 'success') {
+        setStatus('error');
+        setStatusMsg(e.message || 'Pairing failed');
+      }
+      foundSub.remove();
+      bindSub.remove();
+      successSub.remove();
+      errorSub.remove();
+    }
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.cardTitle}>📡 Add Device (EZ Mode)</Text>
+
+          {status === 'idle' && (
+            <>
+              <Text style={styles.label}>Select Home</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }}>
+                <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 4 }}>
+                  {homes.map((h) => (
+                    <TouchableOpacity
+                      key={h.homeId}
+                      style={[styles.chipButton, selectedHomeId === h.homeId && styles.chipButtonActive]}
+                      onPress={() => setSelectedHomeId(h.homeId)}
+                    >
+                      <Text style={[styles.chipText, selectedHomeId === h.homeId && styles.chipTextActive]}>
+                        {h.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+
+              <Text style={styles.label}>Wi-Fi Name (SSID)</Text>
+              <TextInput
+                style={styles.input}
+                value={ssid}
+                onChangeText={setSsid}
+                placeholder="Your Wi-Fi network name"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+
+              <Text style={styles.label}>Wi-Fi Password</Text>
+              <TextInput
+                style={styles.input}
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Your Wi-Fi password"
+                secureTextEntry
+              />
+
+              <View style={styles.infoBox}>
+                <Text style={styles.infoTitle}>ℹ️ EZ Mode</Text>
+                <Text style={styles.infoText}>
+                  Make sure your device is in pairing mode (usually indicated by a blinking LED).
+                  Your phone must be connected to the same 2.4 GHz Wi-Fi network.
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.button, (!selectedHomeId || !ssid.trim()) && styles.buttonDisabled]}
+                onPress={handleStartPairing}
+                disabled={!selectedHomeId || !ssid.trim()}
+              >
+                <Text style={styles.buttonText}>Start Pairing</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          {status === 'pairing' && (
+            <View style={styles.centered}>
+              <ActivityIndicator size="large" color="#007AFF" />
+              <Text style={[styles.statusText, { marginTop: 16 }]}>{statusMsg}</Text>
+              <Text style={styles.statusHint}>Keep the device in pairing mode...</Text>
+              <TouchableOpacity style={[styles.button, { marginTop: 24, backgroundColor: '#FF3B30' }]} onPress={handleClose}>
+                <Text style={styles.buttonText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {status === 'success' && (
+            <View style={styles.centered}>
+              <Text style={styles.successIcon}>✅</Text>
+              <Text style={styles.statusText}>Device Paired!</Text>
+              {pairedDevice && (
+                <View style={styles.deviceCard}>
+                  <Text style={styles.deviceName}>{pairedDevice.name || 'New Device'}</Text>
+                  <Text style={styles.deviceId}>ID: {pairedDevice.devId}</Text>
+                  <Text style={styles.deviceId}>Product: {pairedDevice.productId}</Text>
+                </View>
+              )}
+              <TouchableOpacity style={styles.button} onPress={handleClose}>
+                <Text style={styles.buttonText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {status === 'error' && (
+            <View style={styles.centered}>
+              <Text style={styles.errorIcon}>❌</Text>
+              <Text style={styles.statusText}>Pairing Failed</Text>
+              <Text style={styles.statusHint}>{statusMsg}</Text>
+              <TouchableOpacity style={styles.button} onPress={reset}>
+                <Text style={styles.buttonText}>Try Again</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {status === 'idle' && (
+            <TouchableOpacity style={styles.linkButton} onPress={handleClose}>
+              <Text style={styles.linkText}>Cancel</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ─── Styles ─────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
@@ -607,6 +803,7 @@ const styles = StyleSheet.create({
   fabContainer: { position: 'absolute', bottom: 30, right: 20, gap: 12 },
   fab: { backgroundColor: '#007AFF', borderRadius: 25, paddingHorizontal: 20, paddingVertical: 14, elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4 },
   fabSecondary: { backgroundColor: '#34C759' },
+  fabGreen: { backgroundColor: '#FF9500' },
   fabText: { color: '#fff', fontSize: 16, fontWeight: '600' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 40, maxHeight: '90%' },
@@ -619,4 +816,15 @@ const styles = StyleSheet.create({
   infoBox: { backgroundColor: '#f0f9ff', borderRadius: 10, padding: 16, marginTop: 20, borderLeftWidth: 4, borderLeftColor: '#007AFF' },
   infoTitle: { fontSize: 14, fontWeight: '600', marginBottom: 8, color: '#333' },
   infoText: { fontSize: 13, color: '#666', lineHeight: 20 },
+  chipButton: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#f0f0f5', borderWidth: 1, borderColor: '#ddd' },
+  chipButtonActive: { backgroundColor: '#007AFF', borderColor: '#007AFF' },
+  chipText: { fontSize: 14, color: '#333', fontWeight: '500' },
+  chipTextActive: { color: '#fff' },
+  statusText: { fontSize: 17, fontWeight: '600', textAlign: 'center', marginTop: 8 },
+  statusHint: { fontSize: 13, color: '#888', textAlign: 'center', marginTop: 8 },
+  successIcon: { fontSize: 48, textAlign: 'center' },
+  errorIcon: { fontSize: 48, textAlign: 'center' },
+  deviceCard: { backgroundColor: '#f0f9ff', borderRadius: 10, padding: 16, marginVertical: 16, width: '100%' },
+  deviceName: { fontSize: 16, fontWeight: '600', marginBottom: 4 },
+  deviceId: { fontSize: 12, color: '#888' },
 });

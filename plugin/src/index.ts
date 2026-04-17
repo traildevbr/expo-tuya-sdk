@@ -6,7 +6,10 @@ import {
     withPodfile,
     withProjectBuildGradle,
     withAppBuildGradle,
+    withDangerousMod,
 } from 'expo/config-plugins';
+import * as fs from 'fs';
+import * as path from 'path';
 
 type PlatformKeys = {
     appKey: string;
@@ -87,6 +90,14 @@ const withTuyaPodfile: ConfigPlugin<TuyaSdkPluginProps> = (config, props) => {
             podfile = podfile.replace(
                 /use_expo_modules!\s*\n/,
                 `use_expo_modules!\n${cryptionPod}\n`
+            );
+        }
+
+        // Add BizBundle SDK pod
+        if (!podfile.includes('ThingSmartBusinessExtensionKit')) {
+            podfile = podfile.replace(
+                /use_expo_modules!\s*\n/,
+                `use_expo_modules!\n  pod 'ThingSmartBusinessExtensionKit'\n`
             );
         }
 
@@ -196,6 +207,77 @@ const withTuyaSecurityAar: ConfigPlugin<TuyaSdkPluginProps> = (config, props) =>
     });
 };
 
+// --- iOS: Add BizBundle import to Bridging Header + setupConfig in AppDelegate ---
+const withTuyaBizBundleIos: ConfigPlugin = (config) => {
+    return withDangerousMod(config, [
+        'ios',
+        (dangerousConfig) => {
+            const projectRoot = dangerousConfig.modRequest.projectRoot;
+            const iosDir = path.join(projectRoot, 'ios');
+
+            // Find the bridging header (pattern: <AppName>-Bridging-Header.h)
+            const bridgingHeaderImport =
+                '#import <ThingSmartBusinessExtensionKit/ThingSmartBusinessExtensionKit.h>';
+            const files = fs.readdirSync(iosDir, { recursive: true, withFileTypes: true } as any) as unknown as fs.Dirent[];
+            const bridgingHeader = files.find(
+                (f) => f.isFile() && f.name.endsWith('-Bridging-Header.h')
+            );
+
+            if (bridgingHeader) {
+                const headerPath = path.join(
+                    (bridgingHeader as any).parentPath ?? (bridgingHeader as any).path,
+                    bridgingHeader.name
+                );
+                let contents = fs.readFileSync(headerPath, 'utf8');
+                if (!contents.includes('ThingSmartBusinessExtensionKit')) {
+                    contents = contents.trimEnd() + '\n' + bridgingHeaderImport + '\n';
+                    fs.writeFileSync(headerPath, contents);
+                }
+            }
+
+            // Find AppDelegate.swift and inject setupConfig()
+            const appDelegate = files.find(
+                (f) => f.isFile() && f.name === 'AppDelegate.swift'
+            );
+
+            if (appDelegate) {
+                const appDelegatePath = path.join(
+                    (appDelegate as any).parentPath ?? (appDelegate as any).path,
+                    appDelegate.name
+                );
+                let contents = fs.readFileSync(appDelegatePath, 'utf8');
+                if (!contents.includes('ThingSmartBusinessExtensionConfig.setupConfig')) {
+                    // Insert after didFinishLaunchingWithOptions opening brace
+                    contents = contents.replace(
+                        /(didFinishLaunchingWithOptions[^\{]*\{)/,
+                        `$1\n    ThingSmartBusinessExtensionConfig.setupConfig()`
+                    );
+                    fs.writeFileSync(appDelegatePath, contents);
+                }
+            }
+
+            return dangerousConfig;
+        },
+    ]);
+};
+
+// --- Android: Add BizBundle SDK dependency to app build.gradle ---
+const withTuyaBizBundleAndroid: ConfigPlugin = (config) => {
+    return withAppBuildGradle(config, (gradleConfig) => {
+        let buildGradle = gradleConfig.modResults.contents;
+
+        if (!buildGradle.includes('thingsmart-expansion-sdk')) {
+            buildGradle = buildGradle.replace(
+                /dependencies\s*\{/,
+                `dependencies {\n    implementation "com.thingclips.smart:thingsmart-expansion-sdk:6.11.1"`
+            );
+        }
+
+        gradleConfig.modResults.contents = buildGradle;
+        return gradleConfig;
+    });
+};
+
 const withExpoTuyaSdk: ConfigPlugin<TuyaSdkPluginProps> = (config, props) => {
     if (!props) {
         throw new Error(
@@ -218,12 +300,14 @@ const withExpoTuyaSdk: ConfigPlugin<TuyaSdkPluginProps> = (config, props) => {
         }
         config = withTuyaInfoPlist(config, props);
         config = withTuyaPodfile(config, props);
+        config = withTuyaBizBundleIos(config);
     }
 
     if (props.android) {
         config = withTuyaAndroidManifest(config, props);
         config = withTuyaMavenRepo(config);
         config = withTuyaSecurityAar(config, props);
+        config = withTuyaBizBundleAndroid(config);
     }
 
     return config;

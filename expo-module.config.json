@@ -7,14 +7,16 @@
     "modules": [
       "ExpoTuyaSdkModule",
       "UserAccountModule",
-      "HomeManagementModule"
+      "HomeManagementModule",
+      "DevicePairingModule"
     ]
   },
   "android": {
     "modules": [
       "expo.modules.tuyasdk.ExpoTuyaSdkModule",
       "expo.modules.tuyasdk.UserAccountModule",
-      "expo.modules.tuyasdk.HomeManagementModule"
+      "expo.modules.tuyasdk.HomeManagementModule",
+      "expo.modules.tuyasdk.DevicePairingModule"
     ]
   }
 }
