@@ -1,9 +1,33 @@
 import ExpoModulesCore
 import ThingSmartDeviceKit
 
+// MARK: - Delegate proxy (NSObject required by ThingSmartHomeManagerDelegate)
+
+private class HomeManagerDelegateProxy: NSObject, ThingSmartHomeManagerDelegate {
+  weak var module: HomeManagementModule?
+
+  init(module: HomeManagementModule) {
+    self.module = module
+  }
+
+  func homeManager(_ manager: ThingSmartHomeManager, didAddHome home: ThingSmartHomeModel) {
+    module?.sendEvent("onHomeAdded", ["homeId": home.homeId])
+  }
+
+  func homeManager(_ manager: ThingSmartHomeManager, didRemoveHome homeId: Int64) {
+    module?.homeInstances.removeValue(forKey: homeId)
+    module?.sendEvent("onHomeRemoved", ["homeId": homeId])
+  }
+
+  func serviceConnectedSuccess() {
+    module?.sendEvent("onServerConnectSuccess")
+  }
+}
+
 public class HomeManagementModule: Module {
   private var homeManager: ThingSmartHomeManager?
-  private var homeInstances: [Int64: ThingSmartHome] = [:]
+  fileprivate var homeInstances: [Int64: ThingSmartHome] = [:]
+  private var delegateProxy: HomeManagerDelegateProxy?
 
   public func definition() -> ModuleDefinition {
     Name("ExpoTuyaHomeManagement")
@@ -53,7 +77,7 @@ public class HomeManagementModule: Module {
 
     AsyncFunction("getHomeDetail") { (homeId: Int64, promise: Promise) in
       let home = self.getHomeInstance(homeId)
-      home.getHomeData(success: { homeModel in
+      home.getDataWithSuccess({ homeModel in
         promise.resolve(self.homeModelToDict(homeModel))
       }, failure: { error in
         promise.reject(error ?? self.makeError("Failed to get home detail"))
@@ -64,19 +88,23 @@ public class HomeManagementModule: Module {
 
     AsyncFunction("getHomeLocalCache") { (homeId: Int64, promise: Promise) in
       let home = self.getHomeInstance(homeId)
-      home.getHomeLocalCache(success: { homeModel in
-        promise.resolve(self.homeModelToDict(homeModel))
-      }, failure: { error in
-        promise.reject(error ?? self.makeError("Failed to get home cache"))
-      })
+      // Use the locally cached homeModel; if nil, fall back to a network fetch
+      if let cached = home.homeModel {
+        promise.resolve(self.homeModelToDict(cached))
+      } else {
+        home.getDataWithSuccess({ homeModel in
+          promise.resolve(self.homeModelToDict(homeModel))
+        }, failure: { error in
+          promise.reject(error ?? self.makeError("Failed to get home cache"))
+        })
+      }
     }
 
     // MARK: - Update home
 
     AsyncFunction("updateHome") { (homeId: Int64, name: String, lon: Double, lat: Double, geoName: String, rooms: [String], promise: Promise) in
       let home = self.getHomeInstance(homeId)
-      home.updateHomeInfo(
-        withName: name,
+      home.updateInfo(withName: name,
         geoName: geoName,
         latitude: lat,
         longitude: lon,
@@ -93,7 +121,7 @@ public class HomeManagementModule: Module {
 
     AsyncFunction("dismissHome") { (homeId: Int64, promise: Promise) in
       let home = self.getHomeInstance(homeId)
-      home.dismissHome(success: {
+      home.dismiss(success: {
         self.homeInstances.removeValue(forKey: homeId)
         promise.resolve(nil)
       }, failure: { error in
@@ -105,7 +133,7 @@ public class HomeManagementModule: Module {
 
     AsyncFunction("getHomeWeatherSketch") { (homeId: Int64, promise: Promise) in
       let home = self.getHomeInstance(homeId)
-      home.getHomeWeatherSketch(success: { sketch in
+      home.getWeatherSketch(success: { sketch in
         promise.resolve([
           "condition": sketch?.condition ?? "",
           "temp": sketch?.temp ?? "",
@@ -123,23 +151,23 @@ public class HomeManagementModule: Module {
       let home = self.getHomeInstance(homeId)
       let optionModel = ThingSmartWeatherOptionModel()
       if let tempUnit = units["tempUnit"] as? Int {
-        optionModel.temperatureUnit = ThingSmartTemperatureUnit(rawValue: tempUnit) ?? .celsius
+        optionModel.temperatureUnit = ThingSmartWeatherOptionTemperatureUnit(rawValue: UInt(tempUnit))
       }
       if let pressureUnit = units["pressureUnit"] as? Int {
-        optionModel.pressureUnit = ThingSmartPressureUnit(rawValue: pressureUnit) ?? .hPa
+        optionModel.pressureUnit = ThingSmartWeatherOptionPressureUnit(rawValue: UInt(pressureUnit))
       }
       if let windspeedUnit = units["windspeedUnit"] as? Int {
-        optionModel.windspeedUnit = ThingSmartWindspeedUnit(rawValue: windspeedUnit) ?? .mPerSec
+        optionModel.windspeedUnit = ThingSmartWeatherOptionWindSpeedUnit(rawValue: UInt(windspeedUnit))
       }
       optionModel.limit = limit
 
-      home.getHomeWeatherDetail(with: optionModel, success: { models in
+      home.getWeatherDetail(withOption: optionModel, success: { models in
         let result = models?.map { model -> [String: Any] in
           return [
-            "icon": model.icon ?? "",
-            "name": model.name ?? "",
-            "unit": model.unit ?? "",
-            "value": model.value ?? "",
+            "icon": model.icon,
+            "name": model.name,
+            "unit": model.unit,
+            "value": model.value,
           ]
         } ?? []
         promise.resolve(result)
@@ -152,9 +180,7 @@ public class HomeManagementModule: Module {
 
     AsyncFunction("sortDeviceOrGroup") { (homeId: Int64, orderList: [[String: String]], promise: Promise) in
       let home = self.getHomeInstance(homeId)
-      let nsOrderList = orderList.map { item -> NSDictionary in
-        return item as NSDictionary
-      }
+      let nsOrderList = orderList.map { $0 as [AnyHashable: Any] }
       home.sortDeviceOrGroup(withOrderList: nsOrderList, success: {
         promise.resolve(nil)
       }, failure: { error in
@@ -166,9 +192,8 @@ public class HomeManagementModule: Module {
 
     AsyncFunction("addRoom") { (homeId: Int64, name: String, promise: Promise) in
       let home = self.getHomeInstance(homeId)
-      home.addHomeRoom(withName: name, success: {
-        // iOS doesn't return roomId directly from this callback, resolve nil
-        promise.resolve(0)
+      home.addRoom(withName: name, completion: { roomModel in
+        promise.resolve(roomModel.roomId)
       }, failure: { error in
         promise.reject(error ?? self.makeError("Failed to add room"))
       })
@@ -178,7 +203,7 @@ public class HomeManagementModule: Module {
 
     AsyncFunction("removeRoom") { (homeId: Int64, roomId: Int64, promise: Promise) in
       let home = self.getHomeInstance(homeId)
-      home.removeHomeRoom(withRoomId: roomId, success: {
+      home.removeRoom(withRoomId: roomId, success: {
         promise.resolve(nil)
       }, failure: { error in
         promise.reject(error ?? self.makeError("Failed to remove room"))
@@ -202,9 +227,11 @@ public class HomeManagementModule: Module {
 
     // MARK: - Update room name
 
-    AsyncFunction("updateRoomName") { (roomId: Int64, name: String, promise: Promise) in
-      let room = ThingSmartRoom(roomId: roomId)
-      room?.updateRoomName(name, success: {
+    AsyncFunction("updateRoomName") { (homeId: Int64, roomId: Int64, name: String, promise: Promise) in
+      guard let room = ThingSmartRoom(roomId: roomId, homeId: homeId) else {
+        promise.reject(self.makeError("Failed to get room instance")); return
+      }
+      room.updateName(name, success: {
         promise.resolve(nil)
       }, failure: { error in
         promise.reject(error ?? self.makeError("Failed to update room name"))
@@ -213,9 +240,11 @@ public class HomeManagementModule: Module {
 
     // MARK: - Add device to room
 
-    AsyncFunction("addDeviceToRoom") { (roomId: Int64, devId: String, promise: Promise) in
-      let room = ThingSmartRoom(roomId: roomId)
-      room?.addDevice(withDeviceId: devId, success: {
+    AsyncFunction("addDeviceToRoom") { (homeId: Int64, roomId: Int64, devId: String, promise: Promise) in
+      guard let room = ThingSmartRoom(roomId: roomId, homeId: homeId) else {
+        promise.reject(self.makeError("Failed to get room instance")); return
+      }
+      room.addDevice(withDeviceId: devId, success: {
         promise.resolve(nil)
       }, failure: { error in
         promise.reject(error ?? self.makeError("Failed to add device to room"))
@@ -224,9 +253,11 @@ public class HomeManagementModule: Module {
 
     // MARK: - Remove device from room
 
-    AsyncFunction("removeDeviceFromRoom") { (roomId: Int64, devId: String, promise: Promise) in
-      let room = ThingSmartRoom(roomId: roomId)
-      room?.removeDevice(withDeviceId: devId, success: {
+    AsyncFunction("removeDeviceFromRoom") { (homeId: Int64, roomId: Int64, devId: String, promise: Promise) in
+      guard let room = ThingSmartRoom(roomId: roomId, homeId: homeId) else {
+        promise.reject(self.makeError("Failed to get room instance")); return
+      }
+      room.removeDevice(withDeviceId: devId, success: {
         promise.resolve(nil)
       }, failure: { error in
         promise.reject(error ?? self.makeError("Failed to remove device from room"))
@@ -235,9 +266,11 @@ public class HomeManagementModule: Module {
 
     // MARK: - Add group to room
 
-    AsyncFunction("addGroupToRoom") { (roomId: Int64, groupId: String, promise: Promise) in
-      let room = ThingSmartRoom(roomId: roomId)
-      room?.addGroup(withGroupId: groupId, success: {
+    AsyncFunction("addGroupToRoom") { (homeId: Int64, roomId: Int64, groupId: String, promise: Promise) in
+      guard let room = ThingSmartRoom(roomId: roomId, homeId: homeId) else {
+        promise.reject(self.makeError("Failed to get room instance")); return
+      }
+      room.addGroup(withGroupId: groupId, success: {
         promise.resolve(nil)
       }, failure: { error in
         promise.reject(error ?? self.makeError("Failed to add group to room"))
@@ -246,9 +279,11 @@ public class HomeManagementModule: Module {
 
     // MARK: - Remove group from room
 
-    AsyncFunction("removeGroupFromRoom") { (roomId: Int64, groupId: String, promise: Promise) in
-      let room = ThingSmartRoom(roomId: roomId)
-      room?.removeGroup(withGroupId: groupId, success: {
+    AsyncFunction("removeGroupFromRoom") { (homeId: Int64, roomId: Int64, groupId: String, promise: Promise) in
+      guard let room = ThingSmartRoom(roomId: roomId, homeId: homeId) else {
+        promise.reject(self.makeError("Failed to get room instance")); return
+      }
+      room.removeGroup(withGroupId: groupId, success: {
         promise.resolve(nil)
       }, failure: { error in
         promise.reject(error ?? self.makeError("Failed to remove group from room"))
@@ -257,9 +292,11 @@ public class HomeManagementModule: Module {
 
     // MARK: - Batch room relation
 
-    AsyncFunction("saveBatchRoomRelation") { (roomId: Int64, deviceGroupIds: [String], promise: Promise) in
-      let room = ThingSmartRoom(roomId: roomId)
-      room?.saveBatchRoomRelation(withDeviceGroupList: deviceGroupIds, success: {
+    AsyncFunction("saveBatchRoomRelation") { (homeId: Int64, roomId: Int64, deviceGroupIds: [String], promise: Promise) in
+      guard let room = ThingSmartRoom(roomId: roomId, homeId: homeId) else {
+        promise.reject(self.makeError("Failed to get room instance")); return
+      }
+      room.saveBatchRoomRelation(withDeviceGroupList: deviceGroupIds, success: {
         promise.resolve(nil)
       }, failure: { error in
         promise.reject(error ?? self.makeError("Failed to save batch room relation"))
@@ -275,10 +312,10 @@ public class HomeManagementModule: Module {
       requestModel.name = params["nickName"] as? String ?? ""
       requestModel.account = params["account"] as? String ?? ""
       requestModel.countryCode = params["countryCode"] as? String ?? ""
-      requestModel.role = ThingHomeRoleType(rawValue: params["role"] as? UInt ?? 0) ?? .member
+      requestModel.role = ThingHomeRoleType(rawValue: params["role"] as? Int ?? 0) ?? .member
       requestModel.autoAccept = params["autoAccept"] as? Bool ?? true
 
-      home.addHomeMember(withAddMemeberRequestModel: requestModel, success: { dict in
+      home.addMember(withAddMemeberRequestModel: requestModel, success: { dict in
         promise.resolve(dict ?? [:])
       }, failure: { error in
         promise.reject(error ?? self.makeError("Failed to add member"))
@@ -300,13 +337,13 @@ public class HomeManagementModule: Module {
 
     AsyncFunction("queryMemberList") { (homeId: Int64, promise: Promise) in
       let home = self.getHomeInstance(homeId)
-      home.getHomeMemberList(success: { members in
+      home.getMemberList(success: { members in
         let result = members?.map { m -> [String: Any] in
           return [
             "homeId": homeId,
             "memberId": m.memberId,
-            "nickName": m.nickName ?? "",
-            "account": m.account ?? "",
+            "nickName": m.name ?? "",
+            "account": m.userName ?? "",
             "role": m.role.rawValue,
             "admin": m.role == .admin || m.role == .owner,
             "headPic": m.headPic ?? "",
@@ -326,9 +363,9 @@ public class HomeManagementModule: Module {
       let requestModel = ThingSmartHomeMemberRequestModel()
       requestModel.memberId = params["memberId"] as? Int64 ?? 0
       requestModel.name = params["nickName"] as? String ?? ""
-      requestModel.role = ThingHomeRoleType(rawValue: params["role"] as? UInt ?? 0) ?? .member
+      requestModel.role = ThingHomeRoleType(rawValue: params["role"] as? Int ?? 0) ?? .member
 
-      member.updateHomeMemberInfo(withMemberRequestModel: requestModel, success: {
+      member.updateHomeMemberInfo(with: requestModel, success: {
         promise.resolve(nil)
       }, failure: { error in
         promise.reject(error ?? self.makeError("Failed to update member"))
@@ -343,7 +380,7 @@ public class HomeManagementModule: Module {
       requestModel.homeID = homeId
       requestModel.needMsgContent = true
       invitation.createInvitation(with: requestModel, success: { resultModel in
-        promise.resolve(resultModel?.invitationCode ?? "")
+        promise.resolve(resultModel.invitationCode)
       }, failure: { error in
         promise.reject(error ?? self.makeError("Failed to get invitation code"))
       })
@@ -386,16 +423,17 @@ public class HomeManagementModule: Module {
 
     AsyncFunction("getInvitationList") { (homeId: Int64, promise: Promise) in
       let invitation = ThingSmartHomeInvitation()
-      invitation.fetchInvitationRecordList(withHomeID: homeId, success: { records in
-        let result = records?.map { r -> [String: Any] in
-          return [
-            "invitationId": r.invitationID ?? 0,
-            "invitationCode": r.invitationCode ?? "",
-            "name": r.name ?? "",
-            "role": r.role,
-            "dealStatus": r.dealStatus,
-          ]
-        } ?? []
+      invitation.fetchRecordList(withHomeID: homeId, success: { records in
+        var result: [[String: Any]] = []
+        for record in records {
+          result.append([
+            "invitationId": record.invitationID,
+            "invitationCode": record.invitationCode,
+            "name": record.name,
+            "role": record.role.rawValue,
+            "dealStatus": record.dealStatus.rawValue,
+          ])
+        }
         promise.resolve(result)
       }, failure: { error in
         promise.reject(error ?? self.makeError("Failed to get invitation list"))
@@ -409,7 +447,7 @@ public class HomeManagementModule: Module {
       let requestModel = ThingSmartHomeInvitationInfoRequestModel()
       requestModel.invitationID = NSNumber(value: invitationId)
       requestModel.name = name
-      requestModel.role = ThingHomeRoleType(rawValue: UInt(role)) ?? .member
+      requestModel.role = ThingHomeRoleType(rawValue: role) ?? .member
 
       invitation.updateInvitationInfo(with: requestModel, success: { result in
         promise.resolve(nil)
@@ -421,11 +459,14 @@ public class HomeManagementModule: Module {
     // MARK: - Lifecycle
 
     OnStartObserving {
-      self.getHomeManager().delegate = self
+      let proxy = HomeManagerDelegateProxy(module: self)
+      self.delegateProxy = proxy
+      self.getHomeManager().delegate = proxy
     }
 
     OnStopObserving {
       self.homeManager?.delegate = nil
+      self.delegateProxy = nil
     }
   }
 
@@ -455,30 +496,13 @@ public class HomeManagementModule: Module {
       "geoName": m.geoName ?? "",
       "lon": m.longitude,
       "lat": m.latitude,
-      "admin": m.admin,
-      "homeStatus": m.homeStatus,
+      "admin": m.role == .owner || m.role == .admin,
+      "homeStatus": m.dealStatus.rawValue,
       "role": m.role,
     ]
   }
 
   private func makeError(_ message: String) -> NSError {
     return NSError(domain: "ExpoTuyaHomeManagement", code: -1, userInfo: [NSLocalizedDescriptionKey: message])
-  }
-}
-
-// MARK: - ThingSmartHomeManagerDelegate
-
-extension HomeManagementModule: ThingSmartHomeManagerDelegate {
-  public func homeManager(_ manager: ThingSmartHomeManager, didAddHome home: ThingSmartHomeModel) {
-    sendEvent("onHomeAdded", ["homeId": home.homeId])
-  }
-
-  public func homeManager(_ manager: ThingSmartHomeManager, didRemoveHome homeId: Int64) {
-    homeInstances.removeValue(forKey: homeId)
-    sendEvent("onHomeRemoved", ["homeId": homeId])
-  }
-
-  public func serviceConnectedSuccess() {
-    sendEvent("onServerConnectSuccess")
   }
 }

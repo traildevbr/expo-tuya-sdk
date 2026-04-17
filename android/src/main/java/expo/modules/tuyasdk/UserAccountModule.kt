@@ -25,10 +25,12 @@ class UserAccountModule : Module() {
 
         Events("onSessionInvalid")
 
-        OnCreate {
-            ThingHomeSdk.setOnNeedLoginListener {
-                sendEvent("onSessionInvalid", emptyMap<String, Any>())
-            }
+        OnStartObserving {
+            try {
+                ThingHomeSdk.setOnNeedLoginListener {
+                    sendEvent("onSessionInvalid", emptyMap<String, Any>())
+                }
+            } catch (_: Exception) {}
         }
 
         // ─── Query areas for verification code service ──────────────────────

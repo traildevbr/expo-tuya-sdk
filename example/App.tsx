@@ -189,6 +189,7 @@ function HomeScreen({ onLogout }: { onLogout: () => void }) {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
+  const [showAcceptInvite, setShowAcceptInvite] = useState(false);
   const [selectedHome, setSelectedHome] = useState<HomeBean | null>(null);
 
   const loadHomes = useCallback(async () => {
@@ -250,6 +251,7 @@ function HomeScreen({ onLogout }: { onLogout: () => void }) {
       ) : homes.length === 0 ? (
         <View style={styles.centered}>
           <Text style={styles.emptyText}>No homes yet</Text>
+          <Text style={styles.emptySubtext}>Create a new home or accept an invitation</Text>
         </View>
       ) : (
         <FlatList
@@ -282,12 +284,18 @@ function HomeScreen({ onLogout }: { onLogout: () => void }) {
         />
       )}
 
-      <TouchableOpacity style={styles.fab} onPress={() => setShowCreate(true)}>
-        <Text style={styles.fabText}>+ New Home</Text>
-      </TouchableOpacity>
+      <View style={styles.fabContainer}>
+        <TouchableOpacity style={[styles.fab, styles.fabSecondary]} onPress={() => setShowAcceptInvite(true)}>
+          <Text style={styles.fabText}>📨 Accept Invite</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.fab} onPress={() => setShowCreate(true)}>
+          <Text style={styles.fabText}>+ New Home</Text>
+        </TouchableOpacity>
+      </View>
 
       <CreateHomeModal visible={showCreate} onClose={() => setShowCreate(false)} onCreated={loadHomes} />
       <InviteMemberModal visible={showInvite} home={selectedHome} onClose={() => setShowInvite(false)} />
+      <AcceptInviteModal visible={showAcceptInvite} onClose={() => setShowAcceptInvite(false)} onAccepted={loadHomes} />
     </SafeAreaView>
   );
 }
@@ -455,6 +463,109 @@ function InviteMemberModal({
   );
 }
 
+// ─── Accept Invite Modal ────────────────────────────────────────────────────
+
+function AcceptInviteModal({
+  visible,
+  onClose,
+  onAccepted,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onAccepted: () => void;
+}) {
+  const [invitationCode, setInvitationCode] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleAccept = async () => {
+    if (!invitationCode.trim()) {
+      return Alert.alert('Error', 'Please enter the invitation code');
+    }
+
+    setLoading(true);
+    try {
+      await HomeManagement.joinHomeWithInvitationCode(invitationCode.trim());
+      Alert.alert(
+        'Success! 🎉',
+        'You have successfully joined the home!',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              setInvitationCode('');
+              onClose();
+              onAccepted();
+            },
+          },
+        ]
+      );
+    } catch (e: any) {
+      Alert.alert(
+        'Failed to join',
+        e.message || 'Invalid invitation code. Please check and try again.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.cardTitle}>Accept Home Invitation</Text>
+
+          <Text style={styles.inviteDescription}>
+            Enter the invitation code you received to join a shared home.
+          </Text>
+
+          <Text style={styles.label}>Invitation Code</Text>
+          <TextInput
+            style={styles.input}
+            value={invitationCode}
+            onChangeText={setInvitationCode}
+            placeholder="Paste invitation code here"
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={!loading}
+          />
+
+          <TouchableOpacity
+            style={[styles.button, (!invitationCode.trim() || loading) && styles.buttonDisabled]}
+            onPress={handleAccept}
+            disabled={!invitationCode.trim() || loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.buttonText}>Accept Invitation</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.linkButton}
+            onPress={() => {
+              setInvitationCode('');
+              onClose();
+            }}
+          >
+            <Text style={styles.linkText}>Cancel</Text>
+          </TouchableOpacity>
+
+          <View style={styles.infoBox}>
+            <Text style={styles.infoTitle}>ℹ️ How it works</Text>
+            <Text style={styles.infoText}>
+              • Ask the home owner to share their invitation code{'\n'}
+              • Paste the code above{'\n'}
+              • You'll get access to all devices in the home
+            </Text>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ─── Styles ─────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
@@ -483,6 +594,7 @@ const styles = StyleSheet.create({
   error: { color: '#FF3B30', fontSize: 16, textAlign: 'center' },
   success: { color: 'green' },
   emptyText: { fontSize: 16, color: '#999' },
+  emptySubtext: { fontSize: 14, color: '#bbb', marginTop: 8 },
   listContent: { padding: 16 },
   homeCard: { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 12, flexDirection: 'row', alignItems: 'center' },
   homeName: { fontSize: 17, fontWeight: '600' },
@@ -492,12 +604,19 @@ const styles = StyleSheet.create({
   iconButton: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, backgroundColor: '#f0f0f5' },
   iconButtonText: { fontSize: 13, fontWeight: '600', color: '#007AFF' },
   deleteButton: { backgroundColor: '#fff0f0' },
-  fab: { position: 'absolute', bottom: 30, right: 20, backgroundColor: '#007AFF', borderRadius: 25, paddingHorizontal: 20, paddingVertical: 14, elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4 },
+  fabContainer: { position: 'absolute', bottom: 30, right: 20, gap: 12 },
+  fab: { backgroundColor: '#007AFF', borderRadius: 25, paddingHorizontal: 20, paddingVertical: 14, elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4 },
+  fabSecondary: { backgroundColor: '#34C759' },
   fabText: { color: '#fff', fontSize: 16, fontWeight: '600' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 40 },
+  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 40, maxHeight: '90%' },
   divider: { height: 1, backgroundColor: '#eee', marginVertical: 20 },
   codeBox: { backgroundColor: '#f0f0f5', borderRadius: 10, padding: 16, marginTop: 12, alignItems: 'center' },
   codeText: { fontSize: 20, fontWeight: '700', letterSpacing: 2, color: '#333' },
   codeHint: { fontSize: 12, color: '#999', marginTop: 4 },
+  inviteDescription: { fontSize: 14, color: '#666', marginBottom: 16, lineHeight: 20 },
+  buttonDisabled: { opacity: 0.5 },
+  infoBox: { backgroundColor: '#f0f9ff', borderRadius: 10, padding: 16, marginTop: 20, borderLeftWidth: 4, borderLeftColor: '#007AFF' },
+  infoTitle: { fontSize: 14, fontWeight: '600', marginBottom: 8, color: '#333' },
+  infoText: { fontSize: 13, color: '#666', lineHeight: 20 },
 });

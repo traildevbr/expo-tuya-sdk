@@ -133,45 +133,51 @@ declare class HomeManagementModule extends NativeModule<HomeManagementModuleEven
 
     /**
      * Rename a room.
+     * @param homeId - The home ID.
      * @param roomId - The room ID.
      * @param name - The new room name.
      */
-    updateRoomName(roomId: number, name: string): Promise<void>;
+    updateRoomName(homeId: number, roomId: number, name: string): Promise<void>;
 
     /**
      * Add a device to a room.
+     * @param homeId - The home ID.
      * @param roomId - The room ID.
      * @param devId - The device ID.
      */
-    addDeviceToRoom(roomId: number, devId: string): Promise<void>;
+    addDeviceToRoom(homeId: number, roomId: number, devId: string): Promise<void>;
 
     /**
      * Remove a device from a room.
+     * @param homeId - The home ID.
      * @param roomId - The room ID.
      * @param devId - The device ID.
      */
-    removeDeviceFromRoom(roomId: number, devId: string): Promise<void>;
+    removeDeviceFromRoom(homeId: number, roomId: number, devId: string): Promise<void>;
 
     /**
      * Add a group to a room.
+     * @param homeId - The home ID.
      * @param roomId - The room ID.
      * @param groupId - The group ID.
      */
-    addGroupToRoom(roomId: number, groupId: string): Promise<void>;
+    addGroupToRoom(homeId: number, roomId: number, groupId: string): Promise<void>;
 
     /**
      * Remove a group from a room.
+     * @param homeId - The home ID.
      * @param roomId - The room ID.
      * @param groupId - The group ID.
      */
-    removeGroupFromRoom(roomId: number, groupId: string): Promise<void>;
+    removeGroupFromRoom(homeId: number, roomId: number, groupId: string): Promise<void>;
 
     /**
      * Batch update room-device/group mappings.
+     * @param homeId - The home ID.
      * @param roomId - The room ID.
      * @param deviceGroupIds - List of device IDs or group IDs.
      */
-    saveBatchRoomRelation(roomId: number, deviceGroupIds: string[]): Promise<void>;
+    saveBatchRoomRelation(homeId: number, roomId: number, deviceGroupIds: string[]): Promise<void>;
 
     // ─── Member Management ────────────────────────────────────────────
 

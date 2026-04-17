@@ -25,14 +25,18 @@ class HomeManagementModule : Module() {
                 "onGroupRemoved"
         )
 
-        OnCreate {
-            ThingHomeSdk.getHomeManagerInstance()
-                    .registerThingHomeChangeListener(homeChangeListener)
+        OnStartObserving {
+            try {
+                ThingHomeSdk.getHomeManagerInstance()
+                        .registerThingHomeChangeListener(homeChangeListener)
+            } catch (_: Exception) {}
         }
 
-        OnDestroy {
-            ThingHomeSdk.getHomeManagerInstance()
-                    .unRegisterThingHomeChangeListener(homeChangeListener)
+        OnStopObserving {
+            try {
+                ThingHomeSdk.getHomeManagerInstance()
+                        .unRegisterThingHomeChangeListener(homeChangeListener)
+            } catch (_: Exception) {}
         }
 
         // ─── Home Manager ───────────────────────────────────────────────────
@@ -135,13 +139,14 @@ class HomeManagementModule : Module() {
                 geoName: String,
                 rooms: List<String>,
                 promise: Promise ->
+            // SDK 6.11.1 only has 4-param updateHome(name, lon, lat, geoName, callback)
+            // The rooms param from JS is accepted but not passed to the native API
             ThingHomeSdk.newHomeInstance(homeId.toLong())
                     .updateHome(
                             name,
                             lon,
                             lat,
                             geoName,
-                            rooms,
                             object : IResultCallback {
                                 override fun onSuccess() {
                                     promise.resolve(null)
@@ -202,7 +207,7 @@ class HomeManagementModule : Module() {
                                     )
                                 }
 
-                                override fun onError(errorCode: String?, errorMsg: String?) {
+                                override fun onFailure(errorCode: String?, errorMsg: String?) {
                                     promise.reject(
                                             "ERR_WEATHER_SKETCH",
                                             errorMsg ?: "Failed to get weather sketch",
@@ -231,7 +236,7 @@ class HomeManagementModule : Module() {
                                 override fun onSuccess(
                                         list:
                                                 List<
-                                                        com.thingclips.smart.home.sdk.bean.WeatherTopBean>?
+                                                        com.thingclips.smart.home.sdk.bean.DashBoardBean>?
                                 ) {
                                     val result =
                                             list?.map { item ->
@@ -246,7 +251,7 @@ class HomeManagementModule : Module() {
                                     promise.resolve(result)
                                 }
 
-                                override fun onError(errorCode: String?, errorMsg: String?) {
+                                override fun onFailure(errorCode: String?, errorMsg: String?) {
                                     promise.reject(
                                             "ERR_WEATHER_DETAIL",
                                             errorMsg ?: "Failed to get weather detail",
@@ -267,7 +272,7 @@ class HomeManagementModule : Module() {
                     orderList.map { item ->
                         com.thingclips.smart.home.sdk.bean.DeviceAndGroupInHomeBean().apply {
                             bizId = item["bizId"] ?: ""
-                            bizType = item["bizType"] ?: ""
+                            bizType = (item["bizType"] ?: "0").toInt()
                         }
                     }
             ThingHomeSdk.newHomeInstance(homeId.toLong())
@@ -465,7 +470,8 @@ class HomeManagementModule : Module() {
             val list =
                     deviceGroupIds.map { id ->
                         com.thingclips.smart.home.sdk.bean.DeviceAndGroupInRoomBean().apply {
-                            bizId = id
+                            setId(id)
+                            setType(6) // device type
                         }
                     }
             ThingHomeSdk.newRoomInstance(roomId.toLong())
@@ -491,17 +497,14 @@ class HomeManagementModule : Module() {
 
         AsyncFunction("addMember") { params: Map<String, Any>, promise: Promise ->
             val wrapper =
-                    com.thingclips.smart.home.sdk.bean.MemberWrapperBean().apply {
-                        homeId = (params["homeId"] as? Double)?.toLong() ?: 0L
-                        nickName = params["nickName"] as? String ?: ""
-                        account = params["account"] as? String ?: ""
-                        countryCode = params["countryCode"] as? String ?: ""
-                        role =
-                                (params["role"] as? Double)?.toInt()
-                                        ?: com.thingclips.smart.home.sdk.bean.MemberWrapperBean
-                                                .ROLE_MEMBER
-                        autoAccept = params["autoAccept"] as? Boolean ?: true
-                    }
+                    com.thingclips.smart.home.sdk.bean.MemberWrapperBean.Builder()
+                            .setHomeId((params["homeId"] as? Double)?.toLong() ?: 0L)
+                            .setNickName(params["nickName"] as? String ?: "")
+                            .setAccount(params["account"] as? String ?: "")
+                            .setCountryCode(params["countryCode"] as? String ?: "")
+                            .setRole((params["role"] as? Double)?.toInt() ?: 0)
+                            .setAutoAccept(params["autoAccept"] as? Boolean ?: true)
+                            .build()
             ThingHomeSdk.getMemberInstance()
                     .addMember(
                             wrapper,
@@ -573,15 +576,12 @@ class HomeManagementModule : Module() {
 
         AsyncFunction("updateMember") { params: Map<String, Any>, promise: Promise ->
             val wrapper =
-                    com.thingclips.smart.home.sdk.bean.MemberWrapperBean().apply {
-                        memberId = (params["memberId"] as? Double)?.toLong() ?: 0L
-                        nickName = params["nickName"] as? String ?: ""
-                        role =
-                                (params["role"] as? Double)?.toInt()
-                                        ?: com.thingclips.smart.home.sdk.bean.MemberWrapperBean
-                                                .ROLE_MEMBER
-                        admin = params["admin"] as? Boolean ?: false
-                    }
+                    com.thingclips.smart.home.sdk.bean.MemberWrapperBean.Builder()
+                            .setMemberId((params["memberId"] as? Double)?.toLong() ?: 0L)
+                            .setNickName(params["nickName"] as? String ?: "")
+                            .setRole((params["role"] as? Double)?.toInt() ?: 0)
+                            .setAdmin(params["admin"] as? Boolean ?: false)
+                            .build()
             ThingHomeSdk.getMemberInstance()
                     .updateMember(
                             wrapper,
@@ -607,9 +607,9 @@ class HomeManagementModule : Module() {
                             homeId.toLong(),
                             object :
                                     com.thingclips.smart.sdk.api.IThingDataCallback<
-                                            com.thingclips.smart.home.sdk.bean.InviteMessageBean> {
+                                            com.thingclips.sdk.home.bean.InviteMessageBean> {
                                 override fun onSuccess(
-                                        bean: com.thingclips.smart.home.sdk.bean.InviteMessageBean?
+                                        bean: com.thingclips.sdk.home.bean.InviteMessageBean?
                                 ) {
                                     promise.resolve(bean?.invitationCode ?: "")
                                 }
@@ -805,6 +805,12 @@ class HomeManagementModule : Module() {
 
                 override fun onSharedDeviceList(
                         list: List<com.thingclips.smart.sdk.bean.DeviceBean>?
+                ) {
+                    // Not exposed to JS
+                }
+
+                override fun onSharedGroupList(
+                        list: MutableList<com.thingclips.smart.sdk.bean.GroupBean>?
                 ) {
                     // Not exposed to JS
                 }
