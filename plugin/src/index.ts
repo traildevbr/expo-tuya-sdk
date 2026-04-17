@@ -167,6 +167,16 @@ const withTuyaMavenRepo: ConfigPlugin = (config) => {
             );
         }
 
+        // Exclude SNAPSHOT annotation artifacts that are unavailable in any repo
+        if (!buildGradle.includes('thingmodule-annotation')) {
+            buildGradle = buildGradle.replace(
+                /allprojects\s*\{([\s\S]*?repositories\s*\{[\s\S]*?\})/,
+                (match) =>
+                    match +
+                    `\n  configurations.all {\n    exclude group: 'com.thingclips.smart', module: 'thingsmart-modularCampAnno'\n    exclude group: 'com.thingclips.android.module', module: 'thingmodule-annotation'\n  }`
+            );
+        }
+
         gradleConfig.modResults.contents = buildGradle;
         return gradleConfig;
     });

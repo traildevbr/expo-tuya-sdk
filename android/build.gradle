@@ -26,10 +26,14 @@ repositories {
 
 configurations.all {
   exclude group: 'com.thingclips.smart', module: 'thingsmart-modularCampAnno'
+  exclude group: 'com.thingclips.android.module', module: 'thingmodule-annotation'
 }
 
 dependencies {
   implementation 'com.alibaba:fastjson:1.1.67.android'
   implementation 'com.squareup.okhttp3:okhttp-urlconnection:3.14.9'
   implementation 'com.thingclips.smart:thingsmart:6.11.1'
+  implementation 'com.thingclips.smart:thingsmart-activator-core-kit:6.11.1'
+  implementation 'com.thingclips.smart:thingsmart-sharedevice-sdk:6.11.1'
+  implementation 'com.thingclips.smart:thingsmart-device-share-api:6.11.1'
 }
