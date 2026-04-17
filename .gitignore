@@ -25,7 +25,6 @@ DerivedData
 *.ipa
 *.xcuserstate
 project.xcworkspace
-ios/
 
 # Android/IJ
 #
@@ -39,7 +38,6 @@ local.properties
 android.iml
 android/app/libs
 android/keystores/debug.keystore
-android/
 
 # Cocoapods
 #

@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import ExpoTuyaSdk, { UserAccount } from 'expo-tuya-sdk';
+import { useEffect, useState, useCallback } from 'react';
+import ExpoTuyaSdk, { UserAccount, HomeManagement } from 'expo-tuya-sdk';
+import type { HomeBean } from 'expo-tuya-sdk';
 import {
   SafeAreaView,
   ScrollView,
@@ -10,6 +11,8 @@ import {
   Alert,
   StyleSheet,
   ActivityIndicator,
+  FlatList,
+  Modal,
 } from 'react-native';
 
 type Screen = 'init' | 'auth' | 'home';
@@ -61,41 +64,21 @@ function AuthScreen({ onLoginSuccess }: { onLoginSuccess: () => void }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-      >
+      <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <Text style={styles.header}>Expo Tuya SDK</Text>
-
         <View style={styles.tabRow}>
-          <TouchableOpacity
-            style={[styles.tab, tab === 'login' && styles.tabActive]}
-            onPress={() => setTab('login')}
-          >
+          <TouchableOpacity style={[styles.tab, tab === 'login' && styles.tabActive]} onPress={() => setTab('login')}>
             <Text style={[styles.tabText, tab === 'login' && styles.tabTextActive]}>Login</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, tab === 'register' && styles.tabActive]}
-            onPress={() => setTab('register')}
-          >
-            <Text style={[styles.tabText, tab === 'register' && styles.tabTextActive]}>
-              Register
-            </Text>
+          <TouchableOpacity style={[styles.tab, tab === 'register' && styles.tabActive]} onPress={() => setTab('register')}>
+            <Text style={[styles.tabText, tab === 'register' && styles.tabTextActive]}>Register</Text>
           </TouchableOpacity>
         </View>
-
-        {tab === 'login' ? (
-          <LoginForm onSuccess={onLoginSuccess} />
-        ) : (
-          <RegisterForm onSuccess={() => setTab('login')} />
-        )}
+        {tab === 'login' ? <LoginForm onSuccess={onLoginSuccess} /> : <RegisterForm onSuccess={() => setTab('login')} />}
       </ScrollView>
     </SafeAreaView>
   );
 }
-
-// ─── Login Form ─────────────────────────────────────────────────────────────
 
 function LoginForm({ onSuccess }: { onSuccess: () => void }) {
   const [countryCode, setCountryCode] = useState('55');
@@ -104,15 +87,10 @@ function LoginForm({ onSuccess }: { onSuccess: () => void }) {
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert('Error', 'Fill in all fields');
-      return;
-    }
-
+    if (!email || !password) return Alert.alert('Error', 'Fill in all fields');
     setLoading(true);
     try {
       await UserAccount.loginWithEmail(countryCode, email, password);
-      Alert.alert('Success', 'Logged in!');
       onSuccess();
     } catch (e: any) {
       Alert.alert('Login failed', e.message ?? 'Unknown error');
@@ -124,47 +102,18 @@ function LoginForm({ onSuccess }: { onSuccess: () => void }) {
   return (
     <View style={styles.card}>
       <Text style={styles.cardTitle}>Login with email</Text>
-
       <Text style={styles.label}>Country code</Text>
-      <TextInput
-        style={styles.input}
-        value={countryCode}
-        onChangeText={setCountryCode}
-        keyboardType="number-pad"
-        placeholder="55"
-      />
-
+      <TextInput style={styles.input} value={countryCode} onChangeText={setCountryCode} keyboardType="number-pad" placeholder="55" />
       <Text style={styles.label}>Email</Text>
-      <TextInput
-        style={styles.input}
-        value={email}
-        onChangeText={setEmail}
-        keyboardType="email-address"
-        placeholder="you@example.com"
-        autoCapitalize="none"
-      />
-
+      <TextInput style={styles.input} value={email} onChangeText={setEmail} keyboardType="email-address" placeholder="you@example.com" autoCapitalize="none" />
       <Text style={styles.label}>Password</Text>
-      <TextInput
-        style={styles.input}
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-        placeholder="Your password"
-      />
-
+      <TextInput style={styles.input} value={password} onChangeText={setPassword} secureTextEntry placeholder="Your password" />
       <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>Login</Text>
-        )}
+        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Login</Text>}
       </TouchableOpacity>
     </View>
   );
 }
-
-// ─── Register Form ──────────────────────────────────────────────────────────
 
 function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
   const [countryCode, setCountryCode] = useState('55');
@@ -176,11 +125,7 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
   const [loading, setLoading] = useState(false);
 
   const handleSendCode = async () => {
-    if (!email) {
-      Alert.alert('Error', 'Enter your email');
-      return;
-    }
-
+    if (!email) return Alert.alert('Error', 'Enter your email');
     setLoading(true);
     try {
       await UserAccount.sendVerifyCode(email, region, countryCode, 1);
@@ -194,17 +139,11 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
   };
 
   const handleRegister = async () => {
-    if (!email || !password || !code) {
-      Alert.alert('Error', 'Fill in all fields');
-      return;
-    }
-
+    if (!email || !password || !code) return Alert.alert('Error', 'Fill in all fields');
     setLoading(true);
     try {
       await UserAccount.registerWithEmail(countryCode, email, password, code);
-      Alert.alert('Success', 'Account created! You can now login.', [
-        { text: 'OK', onPress: onSuccess },
-      ]);
+      Alert.alert('Success', 'Account created! You can now login.', [{ text: 'OK', onPress: onSuccess }]);
     } catch (e: any) {
       Alert.alert('Registration failed', e.message ?? 'Unknown error');
     } finally {
@@ -215,78 +154,26 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
   return (
     <View style={styles.card}>
       <Text style={styles.cardTitle}>Register with email</Text>
-
       <Text style={styles.label}>Country code</Text>
-      <TextInput
-        style={styles.input}
-        value={countryCode}
-        onChangeText={setCountryCode}
-        keyboardType="number-pad"
-        placeholder="55"
-      />
-
+      <TextInput style={styles.input} value={countryCode} onChangeText={setCountryCode} keyboardType="number-pad" placeholder="55" />
       <Text style={styles.label}>Region</Text>
-      <TextInput
-        style={styles.input}
-        value={region}
-        onChangeText={setRegion}
-        placeholder="AY"
-        autoCapitalize="characters"
-      />
-
+      <TextInput style={styles.input} value={region} onChangeText={setRegion} placeholder="AY" autoCapitalize="characters" />
       <Text style={styles.label}>Email</Text>
-      <TextInput
-        style={styles.input}
-        value={email}
-        onChangeText={setEmail}
-        keyboardType="email-address"
-        placeholder="you@example.com"
-        autoCapitalize="none"
-      />
-
+      <TextInput style={styles.input} value={email} onChangeText={setEmail} keyboardType="email-address" placeholder="you@example.com" autoCapitalize="none" />
       {!codeSent ? (
         <TouchableOpacity style={styles.button} onPress={handleSendCode} disabled={loading}>
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Send verification code</Text>
-          )}
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Send verification code</Text>}
         </TouchableOpacity>
       ) : (
         <>
           <Text style={styles.label}>Verification code</Text>
-          <TextInput
-            style={styles.input}
-            value={code}
-            onChangeText={setCode}
-            keyboardType="number-pad"
-            placeholder="123456"
-          />
-
+          <TextInput style={styles.input} value={code} onChangeText={setCode} keyboardType="number-pad" placeholder="123456" />
           <Text style={styles.label}>Password</Text>
-          <TextInput
-            style={styles.input}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            placeholder="Choose a password"
-          />
-
+          <TextInput style={styles.input} value={password} onChangeText={setPassword} secureTextEntry placeholder="Choose a password" />
           <TouchableOpacity style={styles.button} onPress={handleRegister} disabled={loading}>
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Create account</Text>
-            )}
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Create account</Text>}
           </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.linkButton}
-            onPress={() => {
-              setCodeSent(false);
-              setCode('');
-            }}
-          >
+          <TouchableOpacity style={styles.linkButton} onPress={() => { setCodeSent(false); setCode(''); }}>
             <Text style={styles.linkText}>Resend code</Text>
           </TouchableOpacity>
         </>
@@ -295,159 +182,322 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
-// ─── Home Screen ────────────────────────────────────────────────────────────
+// ─── Home Screen (after login) ──────────────────────────────────────────────
 
 function HomeScreen({ onLogout }: { onLogout: () => void }) {
-  const [loggingOut, setLoggingOut] = useState(false);
+  const [homes, setHomes] = useState<HomeBean[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
+  const [selectedHome, setSelectedHome] = useState<HomeBean | null>(null);
+
+  const loadHomes = useCallback(async () => {
+    setLoading(true);
+    try {
+      const list = await HomeManagement.queryHomeList();
+      setHomes(list);
+    } catch (e: any) {
+      Alert.alert('Error', e.message ?? 'Failed to load homes');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadHomes();
+  }, [loadHomes]);
 
   const handleLogout = async () => {
-    setLoggingOut(true);
     try {
       await UserAccount.logout();
       onLogout();
     } catch (e: any) {
       Alert.alert('Logout failed', e.message ?? 'Unknown error');
-    } finally {
-      setLoggingOut(false);
     }
+  };
+
+  const handleDismissHome = (home: HomeBean) => {
+    Alert.alert('Delete Home', `Are you sure you want to delete "${home.name}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await HomeManagement.dismissHome(home.homeId);
+            loadHomes();
+          } catch (e: any) {
+            Alert.alert('Error', e.message ?? 'Failed to delete home');
+          }
+        },
+      },
+    ]);
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.centered}>
-        <Text style={styles.header}>Welcome!</Text>
-        <Text style={styles.subtitle}>You are logged in.</Text>
-
-        <TouchableOpacity
-          style={[styles.button, styles.logoutButton]}
-          onPress={handleLogout}
-          disabled={loggingOut}
-        >
-          {loggingOut ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Logout</Text>
-          )}
+      <View style={styles.headerRow}>
+        <Text style={styles.headerSmall}>My Homes</Text>
+        <TouchableOpacity onPress={handleLogout}>
+          <Text style={styles.logoutText}>Logout</Text>
         </TouchableOpacity>
       </View>
+
+      {loading ? (
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color="#007AFF" />
+        </View>
+      ) : homes.length === 0 ? (
+        <View style={styles.centered}>
+          <Text style={styles.emptyText}>No homes yet</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={homes}
+          keyExtractor={(item) => String(item.homeId)}
+          contentContainerStyle={styles.listContent}
+          renderItem={({ item }) => (
+            <View style={styles.homeCard}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.homeName}>{item.name}</Text>
+                <Text style={styles.homeGeo}>{item.geoName || 'No location'}</Text>
+                <Text style={styles.homeId}>ID: {item.homeId}</Text>
+              </View>
+              <View style={styles.homeActions}>
+                <TouchableOpacity
+                  style={styles.iconButton}
+                  onPress={() => {
+                    setSelectedHome(item);
+                    setShowInvite(true);
+                  }}
+                >
+                  <Text style={styles.iconButtonText}>Share</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.iconButton, styles.deleteButton]} onPress={() => handleDismissHome(item)}>
+                  <Text style={[styles.iconButtonText, { color: '#FF3B30' }]}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        />
+      )}
+
+      <TouchableOpacity style={styles.fab} onPress={() => setShowCreate(true)}>
+        <Text style={styles.fabText}>+ New Home</Text>
+      </TouchableOpacity>
+
+      <CreateHomeModal visible={showCreate} onClose={() => setShowCreate(false)} onCreated={loadHomes} />
+      <InviteMemberModal visible={showInvite} home={selectedHome} onClose={() => setShowInvite(false)} />
     </SafeAreaView>
+  );
+}
+
+// ─── Create Home Modal ──────────────────────────────────────────────────────
+
+function CreateHomeModal({
+  visible,
+  onClose,
+  onCreated,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [geoName, setGeoName] = useState('');
+  const [rooms, setRooms] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleCreate = async () => {
+    if (!name) return Alert.alert('Error', 'Enter a home name');
+    setLoading(true);
+    try {
+      const roomList = rooms
+        .split(',')
+        .map((r) => r.trim())
+        .filter(Boolean);
+      await HomeManagement.createHome(name, 0, 0, geoName, roomList);
+      Alert.alert('Success', 'Home created!');
+      setName('');
+      setGeoName('');
+      setRooms('');
+      onClose();
+      onCreated();
+    } catch (e: any) {
+      Alert.alert('Error', e.message ?? 'Failed to create home');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.cardTitle}>Create Home</Text>
+
+          <Text style={styles.label}>Home name</Text>
+          <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="My Home" />
+
+          <Text style={styles.label}>Location</Text>
+          <TextInput style={styles.input} value={geoName} onChangeText={setGeoName} placeholder="City name (optional)" />
+
+          <Text style={styles.label}>Rooms (comma separated)</Text>
+          <TextInput style={styles.input} value={rooms} onChangeText={setRooms} placeholder="Living Room, Bedroom, Kitchen" />
+
+          <TouchableOpacity style={styles.button} onPress={handleCreate} disabled={loading}>
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Create</Text>}
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.linkButton} onPress={onClose}>
+            <Text style={styles.linkText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ─── Invite Member Modal ────────────────────────────────────────────────────
+
+function InviteMemberModal({
+  visible,
+  home,
+  onClose,
+}: {
+  visible: boolean;
+  home: HomeBean | null;
+  onClose: () => void;
+}) {
+  const [account, setAccount] = useState('');
+  const [countryCode, setCountryCode] = useState('55');
+  const [nickName, setNickName] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [inviteCode, setInviteCode] = useState('');
+
+  const handleInvite = async () => {
+    if (!home || !account) return Alert.alert('Error', 'Enter the member account');
+    setLoading(true);
+    try {
+      await HomeManagement.addMember({
+        homeId: home.homeId,
+        nickName: nickName || account,
+        account,
+        countryCode,
+        role: 0,
+        autoAccept: true,
+      });
+      Alert.alert('Success', `${account} added to "${home.name}"!`);
+      setAccount('');
+      setNickName('');
+      onClose();
+    } catch (e: any) {
+      Alert.alert('Error', e.message ?? 'Failed to invite member');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGetCode = async () => {
+    if (!home) return;
+    setLoading(true);
+    try {
+      const code = await HomeManagement.getInvitationCode(home.homeId);
+      setInviteCode(code);
+    } catch (e: any) {
+      Alert.alert('Error', e.message ?? 'Failed to get invitation code');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.cardTitle}>Share "{home?.name}"</Text>
+
+          <Text style={[styles.label, { marginTop: 0 }]}>Add by account</Text>
+
+          <Text style={styles.label}>Country code</Text>
+          <TextInput style={styles.input} value={countryCode} onChangeText={setCountryCode} keyboardType="number-pad" placeholder="55" />
+
+          <Text style={styles.label}>Account (email or phone)</Text>
+          <TextInput style={styles.input} value={account} onChangeText={setAccount} keyboardType="email-address" placeholder="member@example.com" autoCapitalize="none" />
+
+          <Text style={styles.label}>Nickname (optional)</Text>
+          <TextInput style={styles.input} value={nickName} onChangeText={setNickName} placeholder="Member name" />
+
+          <TouchableOpacity style={styles.button} onPress={handleInvite} disabled={loading}>
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Add Member</Text>}
+          </TouchableOpacity>
+
+          <View style={styles.divider} />
+
+          <Text style={styles.label}>Or share via invitation code</Text>
+          <TouchableOpacity style={[styles.button, styles.secondaryButton]} onPress={handleGetCode} disabled={loading}>
+            {loading ? <ActivityIndicator color="#007AFF" /> : <Text style={[styles.buttonText, { color: '#007AFF' }]}>Generate Code</Text>}
+          </TouchableOpacity>
+
+          {inviteCode ? (
+            <View style={styles.codeBox}>
+              <Text style={styles.codeText}>{inviteCode}</Text>
+              <Text style={styles.codeHint}>Share this code with the other person</Text>
+            </View>
+          ) : null}
+
+          <TouchableOpacity style={styles.linkButton} onPress={() => { setInviteCode(''); onClose(); }}>
+            <Text style={styles.linkText}>Close</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
 // ─── Styles ─────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f2f2f7',
-  },
-  scrollContent: {
-    paddingBottom: 40,
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  header: {
-    fontSize: 28,
-    fontWeight: '700',
-    margin: 20,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#666',
-    marginBottom: 30,
-  },
-  initText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#666',
-  },
-  tabRow: {
-    flexDirection: 'row',
-    marginHorizontal: 20,
-    marginBottom: 16,
-    borderRadius: 10,
-    backgroundColor: '#e5e5ea',
-    overflow: 'hidden',
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  tabActive: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-  },
-  tabText: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: '#666',
-  },
-  tabTextActive: {
-    color: '#007AFF',
-  },
-  card: {
-    marginHorizontal: 20,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#666',
-    marginBottom: 4,
-    marginTop: 12,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    backgroundColor: '#fafafa',
-  },
-  button: {
-    backgroundColor: '#007AFF',
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  logoutButton: {
-    backgroundColor: '#FF3B30',
-    paddingHorizontal: 40,
-  },
-  linkButton: {
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  linkText: {
-    color: '#007AFF',
-    fontSize: 14,
-  },
-  error: {
-    color: '#FF3B30',
-    fontSize: 16,
-    textAlign: 'center',
-  },
-  success: {
-    color: 'green',
-  },
+  container: { flex: 1, backgroundColor: '#f2f2f7' },
+  scrollContent: { paddingBottom: 40 },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  header: { fontSize: 28, fontWeight: '700', margin: 20, textAlign: 'center' },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
+  headerSmall: { fontSize: 24, fontWeight: '700' },
+  logoutText: { fontSize: 15, color: '#FF3B30', fontWeight: '600' },
+  initText: { marginTop: 12, fontSize: 16, color: '#666' },
+  tabRow: { flexDirection: 'row', marginHorizontal: 20, marginBottom: 16, borderRadius: 10, backgroundColor: '#e5e5ea', overflow: 'hidden' },
+  tab: { flex: 1, paddingVertical: 10, alignItems: 'center' },
+  tabActive: { backgroundColor: '#fff', borderRadius: 10 },
+  tabText: { fontSize: 15, fontWeight: '500', color: '#666' },
+  tabTextActive: { color: '#007AFF' },
+  card: { marginHorizontal: 20, backgroundColor: '#fff', borderRadius: 12, padding: 20 },
+  cardTitle: { fontSize: 18, fontWeight: '600', marginBottom: 16 },
+  label: { fontSize: 13, fontWeight: '500', color: '#666', marginBottom: 4, marginTop: 12 },
+  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16, backgroundColor: '#fafafa' },
+  button: { backgroundColor: '#007AFF', borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginTop: 20 },
+  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  secondaryButton: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#007AFF' },
+  linkButton: { alignItems: 'center', marginTop: 12 },
+  linkText: { color: '#007AFF', fontSize: 14 },
+  error: { color: '#FF3B30', fontSize: 16, textAlign: 'center' },
+  success: { color: 'green' },
+  emptyText: { fontSize: 16, color: '#999' },
+  listContent: { padding: 16 },
+  homeCard: { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 12, flexDirection: 'row', alignItems: 'center' },
+  homeName: { fontSize: 17, fontWeight: '600' },
+  homeGeo: { fontSize: 13, color: '#888', marginTop: 2 },
+  homeId: { fontSize: 11, color: '#bbb', marginTop: 4 },
+  homeActions: { gap: 8 },
+  iconButton: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, backgroundColor: '#f0f0f5' },
+  iconButtonText: { fontSize: 13, fontWeight: '600', color: '#007AFF' },
+  deleteButton: { backgroundColor: '#fff0f0' },
+  fab: { position: 'absolute', bottom: 30, right: 20, backgroundColor: '#007AFF', borderRadius: 25, paddingHorizontal: 20, paddingVertical: 14, elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4 },
+  fabText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 40 },
+  divider: { height: 1, backgroundColor: '#eee', marginVertical: 20 },
+  codeBox: { backgroundColor: '#f0f0f5', borderRadius: 10, padding: 16, marginTop: 12, alignItems: 'center' },
+  codeText: { fontSize: 20, fontWeight: '700', letterSpacing: 2, color: '#333' },
+  codeHint: { fontSize: 12, color: '#999', marginTop: 4 },
 });
