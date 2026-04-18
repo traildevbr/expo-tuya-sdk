@@ -98,14 +98,7 @@ jobs:
       - name: Setup vendor (mock iOS cryption)
         run: |
           mkdir -p example/vendor/ios/Build
-          cat > example/vendor/ios/ThingSmartCryption.podspec << 'EOF'
-          Pod::Spec.new do |s|
-            s.name    = 'ThingSmartCryption'
-            s.version = '1.0.0'
-            s.summary = 'Mock for CI'
-            s.source  = { :git => '' }
-            s.platforms = { :ios => '13.0' }
-          EOF
+          printf "Pod::Spec.new do |s|\n  s.name    = 'ThingSmartCryption'\n  s.version = '1.0.0'\n  s.summary = 'Mock for CI'\n  s.source  = { :git => '' }\n  s.platforms = { :ios => '13.0' }\nend\n" > example/vendor/ios/ThingSmartCryption.podspec
 
       - name: Prebuild example
         run: npx expo prebuild --platform ios --no-install
