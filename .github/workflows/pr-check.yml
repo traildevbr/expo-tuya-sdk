@@ -1,0 +1,34 @@
+name: PR Check
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Ensures package.json version was bumped on PRs that touch source files
+  version-bump:
+    name: Version bump check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if source changed without version bump
+        run: |
+          BASE=${{ github.event.pull_request.base.sha }}
+          HEAD=${{ github.event.pull_request.head.sha }}
+
+          SOURCE_CHANGED=$(git diff --name-only $BASE $HEAD | grep -E '^(src|ios|android)/|^plugin/src/' || true)
+          VERSION_CHANGED=$(git diff --name-only $BASE $HEAD | grep 'package.json' || true)
+
+          if [ -n "$SOURCE_CHANGED" ] && [ -z "$VERSION_CHANGED" ]; then
+            echo "⚠️  Source files changed but package.json was not updated."
+            echo "Changed source files:"
+            echo "$SOURCE_CHANGED"
+            echo ""
+            echo "Please bump the version in package.json before merging."
+            exit 1
+          fi
+
+          echo "✅ Version check passed"

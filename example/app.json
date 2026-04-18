@@ -15,7 +15,11 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "br.com.traildev.sample",
-      "appleTeamId": "DK7KBP578D"
+      "appleTeamId": "DK7KBP578D",
+      "entitlements": {
+        "com.apple.developer.networking.wifi-info": true,
+        "com.apple.developer.networking.multicast": true
+      }
     },
     "android": {
       "adaptiveIcon": {

@@ -1,7 +1,7 @@
 {
   "name": "expo-tuya-sdk",
   "version": "0.1.0",
-  "description": "Expo wrapper for the Tuya (Thing) Smart Home SDK.",
+  "description": "Expo module wrapping the Tuya (Thing) Smart Home SDK for iOS and Android — home management, device pairing, device sharing, and user account.",
   "main": "build/index.js",
   "types": "build/index.d.ts",
   "scripts": {
@@ -19,19 +19,42 @@
   "keywords": [
     "react-native",
     "expo",
-    "expo-tuya-sdk",
-    "ExpoTuyaSdk"
+    "expo-module",
+    "tuya",
+    "thing-sdk",
+    "smart-home",
+    "iot",
+    "device-pairing",
+    "home-management",
+    "device-sharing"
   ],
   "expo": {
     "configPlugin": "./plugin/build/index.js"
   },
-  "repository": "https://github.com/traildevbr/expo-tuya-sdk",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/traildevbr/expo-tuya-sdk.git"
+  },
   "bugs": {
     "url": "https://github.com/traildevbr/expo-tuya-sdk/issues"
   },
   "author": "Traildev Team <contato@traildev.com.br> (https://github.com/traildevbr)",
   "license": "MIT",
   "homepage": "https://github.com/traildevbr/expo-tuya-sdk#readme",
+  "files": [
+    "build",
+    "android/src",
+    "android/build.gradle",
+    "ios/**/*.swift",
+    "ios/**/*.h",
+    "ios/**/*.m",
+    "plugin/build",
+    "app.plugin.js",
+    "expo-module.config.json",
+    "ExpoTuyaSdk.podspec",
+    "LICENSE",
+    "README.md"
+  ],
   "dependencies": {
     "expo": "~55.0.15",
     "react": "19.2.0",
@@ -44,8 +67,8 @@
     "react-native": "0.82.1"
   },
   "peerDependencies": {
-    "expo": "*",
+    "expo": ">=51.0.0",
     "react": "*",
-    "react-native": "*"
+    "react-native": ">=0.74.0"
   }
 }

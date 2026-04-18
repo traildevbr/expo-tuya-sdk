@@ -1,6 +1,8 @@
 import { NativeModule, requireNativeModule } from 'expo';
 
-import { DeviceBean, DevicePairingModuleEvents } from './DevicePairing.types';
+import {
+    DevicePairingModuleEvents,
+} from './DevicePairing.types';
 
 declare class DevicePairingModule extends NativeModule<DevicePairingModuleEvents> {
     // ─── Token ──────────────────────────────────────────────────────────

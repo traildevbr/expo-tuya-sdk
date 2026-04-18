@@ -1,0 +1,130 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ─── TypeScript: lint + build ──────────────────────────────────────────────
+  typescript:
+    name: TypeScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .tool-versions
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build module
+        run: npm run build
+
+      - name: Build plugin
+        run: npm run build:plugin
+
+  # ─── Android: compile Kotlin ───────────────────────────────────────────────
+  android:
+    name: Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .tool-versions
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install example dependencies
+        run: npm ci
+        working-directory: example
+
+      - name: Setup vendor (mock security AAR)
+        run: |
+          mkdir -p example/vendor/android
+          touch example/vendor/android/security-algorithm-1.0.0-beta.aar
+
+      - name: Prebuild example
+        run: npx expo prebuild --platform android --no-install
+        working-directory: example
+        env:
+          TUYA_ANDROID_APP_KEY: CI_PLACEHOLDER
+          TUYA_ANDROID_APP_SECRET: CI_PLACEHOLDER
+
+      - name: Compile Kotlin
+        run: ./gradlew :expo-tuya-sdk:compileDebugKotlin --no-daemon
+        working-directory: example/android
+
+  # ─── iOS: Swift compile check ─────────────────────────────────────────────
+  ios:
+    name: iOS
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .tool-versions
+          cache: npm
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+          bundler-cache: false
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install example dependencies
+        run: npm ci
+        working-directory: example
+
+      - name: Setup vendor (mock iOS cryption)
+        run: |
+          mkdir -p example/vendor/ios/Build
+          cat > example/vendor/ios/ThingSmartCryption.podspec << 'EOF'
+          Pod::Spec.new do |s|
+            s.name    = 'ThingSmartCryption'
+            s.version = '1.0.0'
+            s.summary = 'Mock for CI'
+            s.source  = { :git => '' }
+            s.platforms = { :ios => '13.0' }
+          EOF
+
+      - name: Prebuild example
+        run: npx expo prebuild --platform ios --no-install
+        working-directory: example
+        env:
+          TUYA_IOS_APP_KEY: CI_PLACEHOLDER
+          TUYA_IOS_APP_SECRET: CI_PLACEHOLDER
+
+      - name: Install CocoaPods
+        run: pod install --repo-update
+        working-directory: example/ios
+
+      - name: Build (compile only)
+        run: |
+          xcodebuild build \
+            -workspace example/ios/SampleApp.xcworkspace \
+            -scheme SampleApp \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcpretty
