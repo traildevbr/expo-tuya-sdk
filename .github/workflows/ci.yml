@@ -114,19 +114,15 @@ jobs:
       - name: Build (compile only)
         run: |
           gem install xcpretty --no-document
-          SIMULATOR=$(xcrun simctl list devices available --json | python3 -c "
-          import json,sys
-          d=json.load(sys.stdin)['devices']
-          iphones=[v for k,vals in d.items() if 'iOS' in k for v in vals if 'iPhone' in v['name'] and v['isAvailable']]
-          print(iphones[0]['udid'] if iphones else '')
-          ")
           set -o pipefail
           xcodebuild build \
             -workspace example/ios/SampleApp.xcworkspace \
             -scheme SampleApp \
             -configuration Debug \
             -sdk iphonesimulator \
-            -destination "id=$SIMULATOR" \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
             -derivedDataPath /tmp/DerivedData \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
             CODE_SIGNING_ALLOWED=NO \
             | xcpretty --color
