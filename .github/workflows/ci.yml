@@ -113,11 +113,15 @@ jobs:
 
       - name: Build (compile only)
         run: |
+          gem install xcpretty --no-document
+          set -o pipefail
           xcodebuild build \
             -workspace example/ios/SampleApp.xcworkspace \
             -scheme SampleApp \
             -configuration Debug \
-            -destination 'generic/platform=iOS Simulator' \
+            -sdk iphonesimulator \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
             -derivedDataPath /tmp/DerivedData \
             CODE_SIGNING_ALLOWED=NO \
-            | xcpretty
+            ONLY_ACTIVE_ARCH=YES \
+            | xcpretty --color
