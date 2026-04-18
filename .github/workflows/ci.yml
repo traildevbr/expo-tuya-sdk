@@ -98,21 +98,7 @@ jobs:
       - name: Setup vendor (mock iOS cryption)
         run: |
           mkdir -p example/vendor/ios/Build
-          cat > example/vendor/ios/ThingSmartCryption.podspec << 'PODSPEC'
-Pod::Spec.new do |s|
-  s.name        = 'ThingSmartCryption'
-  s.version     = '1.0.0'
-  s.summary     = 'Mock for CI'
-  s.description = 'Mock podspec for CI — no real sources needed'
-  s.homepage    = 'https://github.com/tuya/tuya-pod-specs'
-  s.license     = { :type => 'MIT' }
-  s.authors     = { 'Tuya' => 'developer@tuya.com' }
-  s.source      = { :git => 'https://github.com/tuya/tuya-pod-specs.git', :tag => s.version.to_s }
-  s.platforms   = { :ios => '13.0' }
-  s.source_files = 'Build/**/*.{h,m}'
-  s.preserve_paths = 'Build/**/*'
-end
-PODSPEC
+          cp .github/mock/ThingSmartCryption.podspec example/vendor/ios/ThingSmartCryption.podspec
 
       - name: Prebuild example
         run: npx expo prebuild --platform ios --no-install
