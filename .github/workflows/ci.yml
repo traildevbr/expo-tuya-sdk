@@ -120,7 +120,7 @@ jobs:
             -scheme SampleApp \
             -configuration Debug \
             -sdk iphonesimulator \
-            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath /tmp/DerivedData \
             ARCHS=arm64 \
             ONLY_ACTIVE_ARCH=YES \
